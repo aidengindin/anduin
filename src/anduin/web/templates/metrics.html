@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% set active = 'metrics' %}
+{% block title %}Metrics · anduin{% endblock %}
+{% block content %}
+<hgroup>
+  <h1>Metrics</h1>
+  <p>Reconciled time-series across sources.</p>
+</hgroup>
+
+{% set action = "/metrics" %}
+{% include "_range_form.html" with context %}
+
+{% for key, meta in metrics.items() %}
+<article>
+  <header>{{ meta.label }} <small>({{ meta.unit }})</small></header>
+  <div class="chart"
+       data-chart="metric-line"
+       data-url="/api/metrics/{{ key }}.json?since={{ since }}&until={{ until }}"></div>
+</article>
+{% endfor %}
+{% endblock %}

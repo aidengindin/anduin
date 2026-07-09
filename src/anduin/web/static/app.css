@@ -1,0 +1,98 @@
+/* anduin web UI — layout on top of Pico's classless defaults. */
+
+:root {
+  --anduin-chart-h: 260px;
+}
+
+/* Headline tiles: responsive auto-fit grid, single column on narrow screens. */
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: var(--pico-spacing);
+  margin-block: var(--pico-spacing);
+}
+
+.tile {
+  margin: 0;
+  padding: calc(var(--pico-spacing) * 0.75);
+}
+
+.tile-label {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--pico-muted-color);
+}
+
+.tile-value {
+  margin: 0.15rem 0 0;
+  font-size: 1.6rem;
+  font-weight: 600;
+  line-height: 1.1;
+}
+
+.tile-value small {
+  font-size: 0.9rem;
+  font-weight: 400;
+  color: var(--pico-muted-color);
+}
+
+/* Chart containers get a fixed height; uPlot is sized to the parent width. */
+.chart {
+  width: 100%;
+  min-height: var(--anduin-chart-h);
+}
+
+/* uPlot should fill its container width on resize. */
+.uplot,
+.u-wrap {
+  width: 100% !important;
+}
+
+/* uPlot legend is HTML (axes are canvas): lift its contrast for dark mode. */
+.u-legend {
+  color: var(--pico-color, #c0caf5);
+  font-size: 0.85rem;
+}
+
+.u-legend .u-value {
+  color: var(--pico-color, #c0caf5);
+}
+
+.chart-empty {
+  color: var(--pico-muted-color);
+  padding: 1rem 0;
+}
+
+/* Date-range form: wrap gracefully on mobile. */
+.range-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: end;
+  margin-block: var(--pico-spacing);
+}
+
+.range-form input,
+.range-form select {
+  width: auto;
+  margin: 0;
+}
+
+.range-form button {
+  width: auto;
+  margin: 0;
+}
+
+/* Wide tables scroll horizontally instead of overflowing on mobile. */
+.table-scroll {
+  overflow-x: auto;
+}
+
+tr.warmup {
+  color: var(--pico-muted-color);
+}
+
+@media (max-width: 480px) {
+  .tile-value { font-size: 1.3rem; }
+  :root { --anduin-chart-h: 220px; }
+}

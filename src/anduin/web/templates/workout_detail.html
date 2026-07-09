@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% set active = 'workouts' %}
+{% block title %}{{ header.sport or "Workout" }} · anduin{% endblock %}
+{% block content %}
+<p><a href="/workouts">← Workouts</a></p>
+<hgroup>
+  <h1>{{ header.sport or "Workout" }}{% if header.program %} <small>· {{ header.program }}</small>{% endif %}</h1>
+  <p>{{ header.started_at | fmt_dt }} · {{ header.duration_s | fmt_dur }} ·
+    {% if header.source_url %}<a href="{{ header.source_url }}" target="_blank" rel="noopener">View on {{ header.source }} ↗</a>{% else %}<small>{{ header.source }}</small>{% endif %}
+  </p>
+</hgroup>
+
+<div class="tiles">
+  <article class="tile">
+    <p class="tile-label">Calories</p>
+    <p class="tile-value">{{ header.calories | fmt_num(0) }}{% if header.calories_is_derived %} <small>≈</small>{% endif %}</p>
+  </article>
+  <article class="tile">
+    <p class="tile-label">Steps</p>
+    <p class="tile-value">{{ header.steps | fmt_num(0) }}{% if header.steps_is_derived %} <small>≈</small>{% endif %}</p>
+  </article>
+  <article class="tile">
+    <p class="tile-label">Training load</p>
+    <p class="tile-value">{{ header.training_load | fmt_num(0) }}</p>
+  </article>
+</div>
+
+{% if streams %}
+<h2>Streams</h2>
+{% for metric, points in streams.items() %}
+<article>
+  <header>{{ metric }}</header>
+  <div class="chart"
+       data-chart="stream-line"
+       data-series='{{ points | tojson }}'></div>
+</article>
+{% endfor %}
+{% endif %}
+
+{% if exercises %}
+<h2>Exercises</h2>
+{% for ex in exercises %}
+<article>
+  <header>{{ ex.name }}{% if ex.is_unilateral %} <small>· unilateral</small>{% endif %}</header>
+  <div class="table-scroll">
+  <table>
+    <thead>
+      <tr><th>Set</th><th>Weight (kg)</th><th>Reps</th>{% if ex.is_unilateral %}<th>Left reps</th>{% endif %}<th>RPE</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for s in ex.sets %}
+      <tr {% if s.is_warmup %}class="warmup"{% endif %}>
+        <td>{{ s.set_index }}</td>
+        <td>{{ s.weight_kg | fmt_num(1) }}</td>
+        <td>{{ s.reps if s.reps is not none else "—" }}</td>
+        {% if ex.is_unilateral %}<td>{{ s.left_reps if s.left_reps is not none else "—" }}</td>{% endif %}
+        <td>{{ s.rpe | fmt_num(1) }}</td>
+        <td>{% if s.is_warmup %}<small>warmup</small>{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</article>
+{% endfor %}
+{% endif %}
+
+{% if not streams and not exercises %}
+<p>No streams or set data recorded for this workout.</p>
+{% endif %}
+{% endblock %}

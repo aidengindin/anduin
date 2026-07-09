@@ -44,6 +44,10 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     dbp = sub.add_parser("db")
     dbp.add_argument("action", choices=("migrate",))
 
+    sv = sub.add_parser("serve")
+    sv.add_argument("--host", default="127.0.0.1")
+    sv.add_argument("--port", type=int, default=8080)
+
     return p.parse_args(argv)
 
 
@@ -123,6 +127,19 @@ def _run_auth(args: argparse.Namespace, app: cfg_mod.AppConfig) -> int:
     return 0
 
 
+def _run_serve(args: argparse.Namespace, app: cfg_mod.AppConfig) -> int:
+    # Lazy import: the web stack (FastAPI/uvicorn) is only needed for `serve`,
+    # so the extractor path never pays for importing it (mirrors auth's lazy
+    # oauth_flow import).
+    import uvicorn
+
+    from anduin.web.app import create_app
+
+    logger.info("serving on http://%s:%d", args.host, args.port)
+    uvicorn.run(create_app(app), host=args.host, port=args.port, log_level="info")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv or sys.argv[1:])
     logging.basicConfig(
@@ -143,6 +160,8 @@ def main(argv: list[str] | None = None) -> int:
         n = db_mod.migrate(app.secrets.database_url)
         logger.info("applied %d migrations", n)
         return 0
+    if args.cmd == "serve":
+        return _run_serve(args, app)
     logger.error("unknown command: %s", args.cmd)
     return 2
 

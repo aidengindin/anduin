@@ -1,0 +1,14 @@
+{# Date-range picker. `action` is the page path it submits to (GET). #}
+<form role="search" method="get" action="{{ action }}" class="range-form">
+  <input type="date" name="since" value="{{ since }}" aria-label="Since">
+  <input type="date" name="until" value="{{ until }}" aria-label="Until">
+  {% if extra_sport is defined %}
+  <select name="sport" aria-label="Sport">
+    <option value="">All sports</option>
+    {% for s in sports %}
+    <option value="{{ s }}" {% if s == selected_sport %}selected{% endif %}>{{ s }}</option>
+    {% endfor %}
+  </select>
+  {% endif %}
+  <button type="submit">Apply</button>
+</form>

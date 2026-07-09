@@ -31,6 +31,11 @@
             psycopg
             pydantic
             pydantic-settings
+            # web UI (anduin serve)
+            fastapi
+            uvicorn
+            jinja2
+            psycopg-pool
           ];
 
           nativeCheckInputs = with pkgs.python3Packages; [
@@ -69,6 +74,10 @@
                   psycopg
                   pydantic
                   pydantic-settings
+                  fastapi
+                  uvicorn
+                  jinja2
+                  psycopg-pool
                   pytest
                   respx
                   freezegun

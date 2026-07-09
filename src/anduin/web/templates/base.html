@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}anduin{% endblock %}</title>
+  <link rel="stylesheet" href="/static/pico.min.css?v={{ asset_v }}">
+  <link rel="stylesheet" href="/static/uplot.min.css?v={{ asset_v }}">
+  <link rel="stylesheet" href="/static/app.css?v={{ asset_v }}">
+  <script src="/static/htmx.min.js?v={{ asset_v }}" defer></script>
+  <script src="/static/uplot.min.js?v={{ asset_v }}" defer></script>
+  <script src="/static/charts.js?v={{ asset_v }}" defer></script>
+</head>
+<body>
+  <header class="container">
+    <nav>
+      <ul>
+        <li><strong>anduin</strong></li>
+      </ul>
+      <ul>
+        <li><a href="/" {% if active=='dashboard' %}aria-current="page"{% endif %}>Summary</a></li>
+        <li><a href="/metrics" {% if active=='metrics' %}aria-current="page"{% endif %}>Metrics</a></li>
+        <li><a href="/workouts" {% if active=='workouts' %}aria-current="page"{% endif %}>Workouts</a></li>
+      </ul>
+    </nav>
+  </header>
+  <main class="container">
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

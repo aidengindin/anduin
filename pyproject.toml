@@ -20,6 +20,12 @@ dependencies = [
 anduin = "anduin.cli:main"
 
 [project.optional-dependencies]
+web = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "jinja2>=3.1",
+    "psycopg-pool>=3.2",
+]
 dev = [
     "pytest>=8.0",
     "respx>=0.21",
@@ -29,9 +35,15 @@ dev = [
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/anduin"]
-
-[tool.hatch.build.targets.wheel.force-include]
-"migrations" = "anduin/migrations"
+# Non-Python assets (SQL migrations, Jinja templates, vendored static files)
+# live under src/anduin and are included by hatchling's default package-file
+# collection; located at runtime via importlib.resources. `artifacts` ensures
+# they ship even if a future .gitignore rule would otherwise exclude them.
+artifacts = [
+    "src/anduin/migrations/*.sql",
+    "src/anduin/web/templates/**/*",
+    "src/anduin/web/static/**/*",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
