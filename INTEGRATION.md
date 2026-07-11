@@ -84,7 +84,10 @@ target nixpkgs channel before deploying**:
       `extensions = ps: [ ps.timescaledb ]`,
       `settings = { port = 5432; listen_addresses = lib.mkForce "192.168.100.2"; shared_preload_libraries = "timescaledb"; }`.
     - `ensureDatabases = [ "anduin" ]`, `ensureUsers` with `anduin`
-      (ensureDBOwnership) and `anduin_ro` (read-only).
+      (ensureDBOwnership) and `anduin_ro` (read-only). `ensureUsers` only
+      creates the roles; `anduin_ro`'s SELECT grants come from migration
+      `0009_readonly_grants.sql` (which also creates the role if it doesn't
+      exist yet, so ordering doesn't matter).
     - `authentication = lib.mkForce` with `local all all trust`,
       `host all anduin 192.168.100.1/32 trust`, and same for `anduin_ro`. The
       container has no other network exit, so trust on a single host IP is
@@ -354,7 +357,9 @@ and reference `globalVars.ports.anduinPostgres` from
 The first deploy will:
 1. Build the container with postgres+timescale.
 2. Start it; postgres init creates `anduin` DB and roles.
-3. Run `anduin-db-migrate.service`, which applies the 8 migrations.
+3. Run `anduin-db-migrate.service`, which applies the migrations (including
+   `0009`, which grants `anduin_ro` SELECT on `raw`/`canonical` plus default
+   privileges for future tables — `ensureUsers` only creates the role).
 4. Try to start the four extractor services on their timers. Three of them
    (intervals, liftosaur, withings post-seed) will succeed; google-health and
    withings will **fail until you seed OAuth tokens**.
