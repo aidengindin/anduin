@@ -60,14 +60,47 @@ SELECT * FROM canonical.samples WHERE metric = 'heart_rate';
 CREATE OR REPLACE VIEW canonical.steps AS
 SELECT * FROM canonical.samples WHERE metric = 'steps';
 
+-- Fine-grained spo2/hrv are continuous point samples (from the v4
+-- oxygen-saturation / heart-rate-variability sample types) in raw.samples.
 CREATE OR REPLACE VIEW canonical.spo2 AS
-SELECT * FROM canonical.samples WHERE metric IN ('spo2', 'sleep_spo2');
+SELECT * FROM canonical.samples WHERE metric = 'spo2';
 
 CREATE OR REPLACE VIEW canonical.hrv AS
-SELECT * FROM canonical.samples WHERE metric IN ('hrv', 'sleep_hrv');
+SELECT * FROM canonical.samples WHERE metric = 'hrv';
 
+-- skin_temp still unions the legacy sleep_skin_temp companion metric: it has no
+-- v4 replacement pinned yet, so it is left untouched for now.
 CREATE OR REPLACE VIEW canonical.skin_temp AS
 SELECT * FROM canonical.samples WHERE metric IN ('skin_temp', 'sleep_skin_temp');
+
+-- Daily summaries live in raw.daily_metrics, keyed on the source's LOCAL date
+-- (not a UTC window), so they are resolved separately from the continuous
+-- sample stream. DISTINCT ON keeps one row per (metric, local_date) if a second
+-- source ever lands the same daily metric; today google_health is the only one.
+CREATE OR REPLACE VIEW canonical.daily_metrics AS
+SELECT DISTINCT ON (metric, local_date)
+    metric,
+    local_date,
+    source,
+    device,
+    value,
+    unit,
+    tz_offset_minutes
+FROM raw.daily_metrics
+ORDER BY metric, local_date, ingested_at DESC;
+
+CREATE OR REPLACE VIEW canonical.spo2_daily AS
+SELECT * FROM canonical.daily_metrics
+WHERE metric IN ('spo2_daily_avg', 'spo2_daily_min', 'spo2_daily_max');
+
+CREATE OR REPLACE VIEW canonical.hrv_daily AS
+SELECT * FROM canonical.daily_metrics WHERE metric = 'hrv_daily_rmssd';
+
+CREATE OR REPLACE VIEW canonical.resting_heart_rate AS
+SELECT * FROM canonical.daily_metrics WHERE metric = 'resting_heart_rate';
+
+CREATE OR REPLACE VIEW canonical.respiratory_rate AS
+SELECT * FROM canonical.daily_metrics WHERE metric = 'respiratory_rate';
 
 CREATE OR REPLACE VIEW canonical.body_weight AS
 SELECT * FROM canonical.samples WHERE metric = 'body_weight';

@@ -83,6 +83,98 @@ def upsert_samples(conn: Connection, rows: Iterable[dict]) -> int:
     return len(params)
 
 
+def upsert_daily_metrics(conn: Connection, rows: Iterable[dict]) -> int:
+    """Idempotent upsert of daily-summary scalars into raw.daily_metrics.
+
+    Keyed on (source, metric, local_date): a re-pull of the same LOCAL day
+    restates the row in place. Matches upsert_samples' shape (Jsonb-wrap raw,
+    skip the round-trip on empty input, restatement handled by the ON UPDATE
+    trigger)."""
+    sql = """
+    INSERT INTO raw.daily_metrics
+        (source, device, recording_method, metric, value, unit,
+         local_date, tz_offset_minutes, natural_key, raw)
+    VALUES
+        (%(source)s, %(device)s, %(recording_method)s, %(metric)s, %(value)s, %(unit)s,
+         %(local_date)s, %(tz_offset_minutes)s, %(natural_key)s, %(raw)s)
+    ON CONFLICT (source, metric, local_date)
+    DO UPDATE SET
+        value             = EXCLUDED.value,
+        unit              = EXCLUDED.unit,
+        tz_offset_minutes = EXCLUDED.tz_offset_minutes,
+        device            = EXCLUDED.device,
+        recording_method  = EXCLUDED.recording_method,
+        raw               = EXCLUDED.raw,
+        ingested_at       = now()
+    """
+    params = [{**r, "raw": Jsonb(r["raw"])} for r in rows]
+    if not params:
+        return 0
+    with conn.cursor() as cur:
+        cur.executemany(sql, params)
+    conn.commit()
+    return len(params)
+
+
+# Sleep session header, keyed on (source, session_uid). Sibling of the activity
+# header upsert; sleep is a session, not a scalar sample.
+_SLEEP_HEADER_SQL = """
+INSERT INTO raw.sleep_sessions
+    (source, session_uid, device, recording_method, started_at, ended_at,
+     is_main_sleep, sleep_type, minutes_asleep, minutes_awake,
+     minutes_in_sleep_period, minutes_to_fall_asleep, minutes_after_wakeup,
+     efficiency, summary, raw, natural_key)
+VALUES
+    (%(source)s, %(session_uid)s, %(device)s, %(recording_method)s,
+     %(started_at)s, %(ended_at)s, %(is_main_sleep)s, %(sleep_type)s,
+     %(minutes_asleep)s, %(minutes_awake)s, %(minutes_in_sleep_period)s,
+     %(minutes_to_fall_asleep)s, %(minutes_after_wakeup)s, %(efficiency)s,
+     %(summary)s, %(raw)s, %(natural_key)s)
+ON CONFLICT (source, session_uid) DO UPDATE SET
+    device                  = EXCLUDED.device,
+    recording_method        = EXCLUDED.recording_method,
+    started_at              = EXCLUDED.started_at,
+    ended_at                = EXCLUDED.ended_at,
+    is_main_sleep           = EXCLUDED.is_main_sleep,
+    sleep_type              = EXCLUDED.sleep_type,
+    minutes_asleep          = EXCLUDED.minutes_asleep,
+    minutes_awake           = EXCLUDED.minutes_awake,
+    minutes_in_sleep_period = EXCLUDED.minutes_in_sleep_period,
+    minutes_to_fall_asleep  = EXCLUDED.minutes_to_fall_asleep,
+    minutes_after_wakeup    = EXCLUDED.minutes_after_wakeup,
+    efficiency              = EXCLUDED.efficiency,
+    summary                 = EXCLUDED.summary,
+    raw                     = EXCLUDED.raw,
+    ingested_at             = now()
+"""
+
+_SLEEP_STAGE_SQL = """
+INSERT INTO raw.sleep_stages (source, session_uid, stage, started_at, ended_at)
+VALUES (%(source)s, %(session_uid)s, %(stage)s, %(started_at)s, %(ended_at)s)
+ON CONFLICT (source, session_uid, started_at) DO UPDATE SET
+    stage       = EXCLUDED.stage,
+    ended_at    = EXCLUDED.ended_at,
+    ingested_at = now()
+"""
+
+
+def upsert_sleep(conn: Connection, session_row: dict, stage_rows: list[dict]) -> None:
+    """Upsert one sleep session: header into raw.sleep_sessions, stage segments
+    into raw.sleep_stages, in a single transaction (same pattern as
+    upsert_strength). ``summary`` is Jsonb-wrapped only when present."""
+    summary = session_row.get("summary")
+    header = {
+        **session_row,
+        "summary": Jsonb(summary) if summary is not None else None,
+        "raw": Jsonb(session_row["raw"]),
+    }
+    with conn.cursor() as cur:
+        cur.execute(_SLEEP_HEADER_SQL, header)
+        if stage_rows:
+            cur.executemany(_SLEEP_STAGE_SQL, stage_rows)
+    conn.commit()
+
+
 def upsert_activity(conn: Connection, row: dict) -> None:
     # Cardio path. Uses the shared activity-header upsert; cardio callers (e.g.
     # sources/intervals.py) build rows without a ``program`` key, which the

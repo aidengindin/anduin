@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
+from contextlib import ExitStack
 from datetime import date, datetime, timedelta, timezone
 
 from anduin import config as cfg_mod
@@ -61,7 +62,16 @@ def _run_extract(args: argparse.Namespace, app: cfg_mod.AppConfig) -> int:
         logger.error("--since and --until must be provided together")
         return 2
     result: SourceResult
-    with make_client() as http, db_mod.connect(app.secrets.database_url) as conn:
+    # --dry-run never writes, so it must not require a reachable/writable DB:
+    # extractors all guard their conn usage behind `if dry_run`. This lets a
+    # source be validated against its API with no database set up.
+    with ExitStack() as stack:
+        http = stack.enter_context(make_client())
+        conn = (
+            None
+            if args.dry_run
+            else stack.enter_context(db_mod.connect(app.secrets.database_url))
+        )
         if args.source == "google-health":
             since, until = (
                 (args.since, args.until)

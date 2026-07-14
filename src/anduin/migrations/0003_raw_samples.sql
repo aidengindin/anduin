@@ -68,3 +68,37 @@ ALTER TABLE raw.samples SET (
 );
 
 SELECT add_compression_policy('raw.samples', INTERVAL '14 days', if_not_exists => TRUE);
+
+
+-- Daily summaries are a distinct grain from the continuous sample stream above:
+-- one row = one source's summary for one metric on one LOCAL calendar day. They
+-- are keyed on local_date (the source's own local date, taken verbatim from the
+-- upstream daily message) rather than a UTC timestamp, so travel across time
+-- zones can never collide two "daily" rows into one UTC day nor split one across
+-- two. tz_offset_minutes records the offset when the source supplies it.
+--
+-- No hypertable: one row per metric per day is tiny (same reasoning as
+-- raw.sleep_sessions), and a plain PK gives idempotent re-pulls directly.
+CREATE TABLE IF NOT EXISTS raw.daily_metrics (
+    source            text             NOT NULL,
+    device            text,
+    recording_method  text,
+    metric            text             NOT NULL,
+    value             double precision NOT NULL,
+    unit              text,
+    local_date        date             NOT NULL,
+    tz_offset_minutes integer,
+    raw               jsonb            NOT NULL,
+    natural_key       text             NOT NULL,
+    ingested_at       timestamptz      NOT NULL DEFAULT now(),
+    PRIMARY KEY (source, metric, local_date)
+);
+
+CREATE INDEX IF NOT EXISTS daily_metrics_metric_date
+    ON raw.daily_metrics (metric, local_date DESC);
+
+-- Same generic restatement audit as raw.samples (needs natural_key + raw).
+DROP TRIGGER IF EXISTS daily_metrics_restatement ON raw.daily_metrics;
+CREATE TRIGGER daily_metrics_restatement
+    BEFORE UPDATE ON raw.daily_metrics
+    FOR EACH ROW EXECUTE FUNCTION raw.log_restatement();

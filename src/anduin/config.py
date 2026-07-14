@@ -17,7 +17,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Secrets(BaseSettings):
-    model_config = SettingsConfigDict(env_file=None, case_sensitive=False, extra="ignore")
+    # Real environment variables (systemd EnvironmentFile= in production) take
+    # precedence; a `.env` in the working directory is read as a convenience for
+    # local development. A missing .env is ignored.
+    model_config = SettingsConfigDict(env_file=".env", case_sensitive=False, extra="ignore")
 
     # Each may be empty in isolation if only one extractor is invoked.
     google_health_client_id: str = ""
@@ -32,6 +35,11 @@ class Secrets(BaseSettings):
     liftosaur_api_key: str = ""
 
     database_url: str = Field(min_length=1)
+
+    # Dev override for the state dir (where OAuth tokens are persisted). Lets you
+    # avoid the hardcoded /var/lib/anduin/state default without root. Set via env
+    # or .env as ANDUIN_STATE_DIR; takes precedence over systemd's STATE_DIRECTORY.
+    anduin_state_dir: str = ""
 
 
 class GoogleHealthConfig(BaseModel):
@@ -80,7 +88,10 @@ def load() -> AppConfig:
         file_cfg = FileConfig.model_validate(file_data)
     else:
         file_cfg = FileConfig()
-    state_override = os.environ.get("STATE_DIRECTORY")
+    secrets = Secrets()
+    # State-dir override precedence: explicit ANDUIN_STATE_DIR (dev, also via
+    # .env) beats systemd's STATE_DIRECTORY, which beats the config default.
+    state_override = secrets.anduin_state_dir or os.environ.get("STATE_DIRECTORY", "")
     if state_override:
         file_cfg.state_dir = Path(state_override.split(":")[0])
-    return AppConfig(secrets=Secrets(), file=file_cfg)
+    return AppConfig(secrets=secrets, file=file_cfg)

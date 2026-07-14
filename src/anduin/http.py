@@ -19,6 +19,14 @@ def make_client(**kwargs: Any) -> httpx.Client:
     return httpx.Client(timeout=DEFAULT_TIMEOUT, transport=transport, **kwargs)
 
 
+def _safe_text(r: Any) -> str:
+    """Best-effort response body for error logging, length-capped."""
+    try:
+        return (r.text or "")[:1000]
+    except Exception:  # noqa: BLE001
+        return "<no body>"
+
+
 def _retry_request(
     fn,
     url: str,
@@ -31,34 +39,46 @@ def _retry_request(
     for attempt in range(retries):
         try:
             r = fn()
-            if r.status_code == 429:
-                last_429 = r
-                wait = float(r.headers.get("retry-after", backoff**attempt))
-                logger.warning("rate limited (429) on %s, sleeping %.1fs", url, wait)
-                time.sleep(wait)
-                continue
-            if 500 <= r.status_code < 600:
-                raise httpx.HTTPStatusError(
-                    f"server {r.status_code}", request=r.request, response=r
-                )
-            r.raise_for_status()
-            return r.json()
-        except (
-            httpx.TransportError,
-            httpx.TimeoutException,
-            httpx.HTTPStatusError,
-        ) as e:
+        except (httpx.TransportError, httpx.TimeoutException) as e:
             last_exc = e
             if attempt < retries - 1:
                 sleep_for = backoff**attempt
                 logger.warning(
                     "request failed (%s), retry %d/%d in %.1fs",
-                    e.__class__.__name__,
-                    attempt + 1,
-                    retries,
-                    sleep_for,
+                    e.__class__.__name__, attempt + 1, retries, sleep_for,
                 )
                 time.sleep(sleep_for)
+            continue
+
+        if r.status_code == 429:
+            last_429 = r
+            wait = float(r.headers.get("retry-after", backoff**attempt))
+            logger.warning("rate limited (429) on %s, sleeping %.1fs", url, wait)
+            time.sleep(wait)
+            continue
+
+        if 400 <= r.status_code < 500:
+            # Client errors are deterministic: retrying only wastes time. Surface
+            # the response body (APIs put the real reason there, e.g. Google's
+            # ACCOUNT_NOT_LINKED) and fail fast.
+            logger.warning("client error %d on %s: %s", r.status_code, url, _safe_text(r))
+            r.raise_for_status()
+
+        if 500 <= r.status_code < 600:
+            last_exc = httpx.HTTPStatusError(
+                f"server {r.status_code}", request=r.request, response=r
+            )
+            if attempt < retries - 1:
+                sleep_for = backoff**attempt
+                logger.warning(
+                    "server error %d on %s, retry %d/%d in %.1fs",
+                    r.status_code, url, attempt + 1, retries, sleep_for,
+                )
+                time.sleep(sleep_for)
+            continue
+
+        r.raise_for_status()
+        return r.json()
     if last_exc is not None:
         raise last_exc
     if last_429 is not None:

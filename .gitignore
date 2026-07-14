@@ -7,3 +7,7 @@ __pycache__/
 result
 result-*
 .claude/
+.env
+.state/
+# Local dev state dir (ANDUIN_STATE_DIR=./state) — holds OAuth tokens.
+/state/

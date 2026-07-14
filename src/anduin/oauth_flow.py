@@ -27,13 +27,14 @@ logger = logging.getLogger(__name__)
 GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 GOOGLE_HEALTH_SCOPES = [
-    # Fitbit-via-Google scopes; the user must enable these on their OAuth client.
-    "https://www.googleapis.com/auth/fitness.heart_rate.read",
-    "https://www.googleapis.com/auth/fitness.activity.read",
-    "https://www.googleapis.com/auth/fitness.sleep.read",
-    "https://www.googleapis.com/auth/fitness.oxygen_saturation.read",
-    "https://www.googleapis.com/auth/fitness.body_temperature.read",
-    "https://www.googleapis.com/auth/fitness.heart_rate.read",
+    # Google Health API v4 scopes (health.googleapis.com/v4). The user must
+    # enable these on their OAuth client. sleep -> the sleep data type;
+    # activity_and_fitness -> steps/distance/active-energy-burned;
+    # health_metrics_and_measurements -> heart-rate, spo2, hrv, resting HR,
+    # respiratory rate (both the sample and daily variants).
+    "https://www.googleapis.com/auth/googlehealth.sleep.readonly",
+    "https://www.googleapis.com/auth/googlehealth.activity_and_fitness.readonly",
+    "https://www.googleapis.com/auth/googlehealth.health_metrics_and_measurements.readonly",
 ]
 
 WITHINGS_AUTH_URL = "https://account.withings.com/oauth2_user/authorize2"

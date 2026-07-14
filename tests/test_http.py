@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 import httpx
 import pytest
 
@@ -7,11 +9,12 @@ from anduin.http import get_json
 
 
 class _StubResponse:
-    def __init__(self, status_code, *, url="https://example.test/api", json_data=None):
+    def __init__(self, status_code, *, url="https://example.test/api", json_data=None, text=""):
         self.status_code = status_code
         self.headers = {"retry-after": "0"}
         self.request = httpx.Request("GET", url)
         self._json_data = json_data if json_data is not None else {}
+        self.text = text
 
     def json(self):
         return self._json_data
@@ -53,3 +56,37 @@ def test_retry_then_success_returns_json():
     client = _RateLimitedThenOkClient(fail_times=2, payload=payload)
     result = get_json(client, "https://example.test/api", retries=3, backoff=2.0)
     assert result == payload
+
+
+class _CountingClient:
+    def __init__(self, status, text=""):
+        self.calls = 0
+        self._status = status
+        self._text = text
+
+    def get(self, *args, **kwargs):
+        self.calls += 1
+        return _StubResponse(self._status, text=self._text)
+
+
+def test_client_error_fails_fast_without_retry():
+    # A 400 is deterministic; retrying it wastes time. Must raise on the first try.
+    client = _CountingClient(400, text='{"error": "bad"}')
+    with pytest.raises(httpx.HTTPStatusError):
+        get_json(client, "https://example.test/api", retries=3, backoff=2.0)
+    assert client.calls == 1
+
+
+def test_client_error_surfaces_response_body(caplog):
+    client = _CountingClient(400, text="ACCOUNT_NOT_LINKED detail here")
+    with caplog.at_level(logging.WARNING), pytest.raises(httpx.HTTPStatusError):
+        get_json(client, "https://example.test/api", retries=3, backoff=2.0)
+    assert "ACCOUNT_NOT_LINKED detail here" in caplog.text
+
+
+def test_server_error_still_retries():
+    # 5xx is transient; keep retrying up to the limit.
+    client = _CountingClient(503)
+    with pytest.raises(httpx.HTTPStatusError):
+        get_json(client, "https://example.test/api", retries=3, backoff=2.0)
+    assert client.calls == 3
