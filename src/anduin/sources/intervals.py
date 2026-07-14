@@ -21,6 +21,8 @@ from anduin.upsert import upsert_activity, upsert_activity_streams
 logger = logging.getLogger(__name__)
 
 BASE = "https://intervals.icu/api/v1/athlete"
+# Streams are NOT athlete-scoped: /api/v1/activity/{id}/streams (verified live).
+API_ROOT = "https://intervals.icu/api/v1"
 
 STREAM_METRICS = (
     "heartrate",
@@ -29,7 +31,7 @@ STREAM_METRICS = (
     "distance",
     "altitude",
     "temp",
-    "speed",
+    "velocity_smooth",  # intervals.icu's name for speed; "speed" 422s (verified live)
 )
 
 
@@ -75,10 +77,8 @@ def _list_activities(
     return data if isinstance(data, list) else []
 
 
-def _fetch_streams(
-    http: httpx.Client, athlete_id: str, api_key: str, activity_id: str
-):
-    url = f"{BASE}/{athlete_id}/activities/{activity_id}/streams"
+def _fetch_streams(http: httpx.Client, api_key: str, activity_id: str):
+    url = f"{API_ROOT}/activity/{activity_id}/streams"
     params = {"types": ",".join(STREAM_METRICS)}
     return get_json(http, url, params=params, auth=_auth(api_key))
 
@@ -171,7 +171,7 @@ def extract(
         if not app.file.intervals.pull_streams:
             continue
         try:
-            streams_payload = _fetch_streams(http, athlete, key, aid)
+            streams_payload = _fetch_streams(http, key, aid)
         except Exception as e:  # noqa: BLE001
             result.error(f"streams {aid}: {e!r}")
             continue
