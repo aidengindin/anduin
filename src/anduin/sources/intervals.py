@@ -16,7 +16,11 @@ from psycopg import Connection
 from anduin.config import AppConfig
 from anduin.http import get_json
 from anduin.sources.base import SourceResult
-from anduin.upsert import upsert_activity, upsert_activity_streams
+from anduin.upsert import (
+    upsert_activity,
+    upsert_activity_streams,
+    upsert_daily_metrics,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +79,46 @@ def _list_activities(
     params = {"oldest": start.isoformat(), "newest": end.isoformat()}
     data = get_json(http, url, params=params, auth=_auth(api_key))
     return data if isinstance(data, list) else []
+
+
+# PMC: intervals already computes Fitness (CTL) / Fatigue (ATL) daily; we ingest
+# them rather than recompute. Form (TSB) = ctl - atl is derived downstream.
+_WELLNESS_METRICS = ("ctl", "atl")
+
+
+def _fetch_wellness(http: httpx.Client, athlete_id: str, api_key: str, start: date, end: date):
+    url = f"{BASE}/{athlete_id}/wellness"
+    params = {"oldest": start.isoformat(), "newest": end.isoformat()}
+    data = get_json(http, url, params=params, auth=_auth(api_key))
+    return data if isinstance(data, list) else []
+
+
+def _wellness_rows(records) -> list[dict]:
+    """Map wellness records into raw.daily_metrics rows for ctl/atl. Skips records
+    with no date and metrics whose value is absent."""
+    out: list[dict] = []
+    for rec in records or []:
+        d = rec.get("id")
+        if not d:
+            continue
+        local_date = date.fromisoformat(d)
+        for metric in _WELLNESS_METRICS:
+            value = rec.get(metric)
+            if value is None:
+                continue
+            out.append({
+                "source": "intervals",
+                "device": None,
+                "recording_method": "intervals",
+                "metric": metric,
+                "value": float(value),
+                "unit": None,
+                "local_date": local_date,
+                "tz_offset_minutes": None,
+                "natural_key": f"{metric}|{local_date.isoformat()}",
+                "raw": rec,
+            })
+    return out
 
 
 def _fetch_streams(http: httpx.Client, api_key: str, activity_id: str):
@@ -184,5 +228,20 @@ def extract(
             result.add("raw.activity_streams", n)
         except Exception as e:  # noqa: BLE001
             result.error(f"stream upsert {aid}: {e!r}")
+
+    # PMC (fitness/fatigue) from the wellness feed -> raw.daily_metrics.
+    try:
+        wellness = _wellness_rows(_fetch_wellness(http, athlete, key, since, until))
+    except Exception as e:  # noqa: BLE001
+        result.error(f"wellness {since}..{until}: {e!r}")
+        wellness = []
+    if dry_run:
+        logger.info("would upsert %d wellness (ctl/atl) rows", len(wellness))
+    elif wellness:
+        try:
+            n = upsert_daily_metrics(conn, wellness)
+            result.add("raw.daily_metrics", n)
+        except Exception as e:  # noqa: BLE001
+            result.error(f"wellness upsert: {e!r}")
 
     return result

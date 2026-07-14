@@ -119,3 +119,12 @@ wellness date; `derived.pmc(local_date, ctl, atl, form)` with `form = ctl - atl`
 - **C.** `tz_offset_minutes` column + extractor change; SRI views.
 - **D.** hrv_status, rhr_status, respiratory_rate_status, spo2_status.
 - **E.** intervals wellness ingestion + `derived.pmc`.
+
+## Status — all phases complete (2026-07-14)
+
+All five phases implemented, migrated (0013–0017) and validated on a local
+TimescaleDB (`scripts/dev-db.sh`). Live-validated on real data: body-composition
+trend (Withings), PMC (intervals, Form coherent with the load). Seeded/unit
+validated pending device: sleep efficiency + stage composition (math matches by
+hand), SRI (+100 identical / ~29 for 4h-alternating), HRV/RHR/RR/SpO₂ status
+(classification triggers correctly). 82 Python tests pass, ruff clean.
