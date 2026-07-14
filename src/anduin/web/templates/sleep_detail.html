@@ -46,7 +46,7 @@
 <div class="grid c2" style="margin-top:12px;">
   {% set stages = [('Deep', n.deep_min, n.pct_deep, '#4b5fd0'), ('REM', n.rem_min, n.pct_rem, '#34d3c2'), ('Light', n.light_min, n.pct_light, '#7c8cff'), ('Awake', n.awake_min, n.pct_awake, '#8b93a2')] %}
   {% for name, mins, pct, col in stages %}
-  <div class="card" style="padding:13px 15px;">
+  <div class="card sleep-stat-card">
     <div style="display:flex;align-items:center;gap:7px;"><span style="width:8px;height:8px;border-radius:2px;background:{{ col }};"></span><span class="muted" style="font-size:12px;font-weight:600;">{{ name }}</span></div>
     <div class="num" style="color:var(--text);font-weight:700;font-size:19px;margin-top:5px;">{{ mins|fmt_hm }} <span class="muted" style="font-size:11px;font-weight:500;">{{ pct|round|int if pct is not none else 0 }}%</span></div>
   </div>
@@ -55,12 +55,12 @@
 
 {# efficiency + consistency #}
 <div class="grid c2" style="margin-top:12px;">
-  <div class="card">
+  <div class="card sleep-stat-card">
     <div class="stat-label">Efficiency</div>
     <div class="stat-med num">{{ n.efficiency_pct|round|int }}<span class="unit">%</span></div>
     <div class="bar sleep"><span style="width:{{ n.efficiency_pct|round|int }}%;"></span></div>
   </div>
-  <div class="card">
+  <div class="card sleep-stat-card">
     <div class="stat-label">Consistency · SRI</div>
     {% if n.sri is not none %}
     <div class="stat-med num">{{ n.sri|round|int }}<span class="unit">/100</span></div>

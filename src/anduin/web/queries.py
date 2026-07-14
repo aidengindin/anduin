@@ -25,6 +25,10 @@ METRICS: dict[str, dict[str, Any]] = {
         "label": "HRV", "desc": "Heart-rate variability", "unit": "ms", "group": "recovery",
         "color": "#34d3c2", "view": "canonical.hrv_daily",
         "date_col": "local_date", "value_col": "value", "digits": 0, "better": "high",
+        "band": {
+            "view": "derived.hrv_status", "date_col": "local_date",
+            "lo": "low_thresh", "hi": "high_thresh",
+        },
     },
     "resting_heart_rate": {
         "label": "Resting HR", "desc": "Overnight resting heart rate", "unit": "bpm",
@@ -51,16 +55,19 @@ METRICS: dict[str, dict[str, Any]] = {
         "label": "Body weight", "desc": "Withings", "unit": "kg", "group": "body",
         "color": "#6dd0b0", "view": "canonical.body_weight",
         "date_col": "valid_from", "value_col": "value", "digits": 1, "better": "low",
+        "trend": "body_composition_trend",
     },
     "body_fat_ratio": {
         "label": "Body fat", "desc": "Withings", "unit": "%", "group": "body",
         "color": "#6dd0b0", "view": "canonical.body_fat_ratio",
         "date_col": "valid_from", "value_col": "value", "digits": 1, "better": "low",
+        "trend": "body_composition_trend",
     },
     "muscle_mass": {
         "label": "Muscle mass", "desc": "Withings", "unit": "kg", "group": "body",
         "color": "#6dd0b0", "view": "canonical.muscle_mass",
         "date_col": "valid_from", "value_col": "value", "digits": 1, "better": "high",
+        "trend": "body_composition_trend",
     },
     "steps": {
         "label": "Steps", "desc": "Daily total", "unit": "", "group": "activity",
@@ -173,10 +180,53 @@ def _card(conn: Connection, key: str, spark_days: int = 14) -> dict[str, Any] | 
         else:
             good = (rising and better == "high") or (not rising and better == "low")
             dir_ = "down" if good else "up"  # 'down' class = good/teal, 'up' = neutral teal
+    per_week = _body_slope_per_week(conn, key) if m.get("trend") == "body_composition_trend" else None
     return {
         "key": key, "label": m["label"], "desc": m["desc"], "unit": m["unit"],
         "color": m["color"], "group": m["group"], "digits": m["digits"],
         "value": latest["value"], "at": latest["at"], "delta": delta, "dir": dir_,
+        "per_week": per_week, "spark": _spark_points(vals),
+    }
+
+
+def _body_slope_per_week(conn: Connection, metric: str) -> float | None:
+    with conn.cursor() as cur:
+        cur.execute("""
+            SELECT slope_per_week
+            FROM derived.body_composition_trend
+            WHERE metric = %(metric)s
+            ORDER BY valid_from DESC
+            LIMIT 1
+        """, {"metric": metric})
+        r = cur.fetchone()
+    return float(r["slope_per_week"]) if r and r["slope_per_week"] is not None else None
+
+
+def blood_pressure_row(conn: Connection) -> dict[str, Any] | None:
+    """Latest BP plus a trailing systolic sparkline for the Metrics index."""
+    with conn.cursor() as cur:
+        cur.execute("""
+            SELECT valid_from, systolic, diastolic
+            FROM canonical.blood_pressure
+            ORDER BY valid_from DESC
+            LIMIT 1
+        """)
+        latest = cur.fetchone()
+        if latest is None:
+            return None
+        cur.execute("""
+            SELECT avg(systolic) AS v
+            FROM canonical.blood_pressure
+            WHERE valid_from >= (now() - make_interval(days => 14))
+              AND systolic IS NOT NULL
+            GROUP BY date_trunc('day', valid_from)
+            ORDER BY date_trunc('day', valid_from)
+        """)
+        vals = [float(r["v"]) for r in cur.fetchall() if r["v"] is not None]
+    return {
+        "latest_systolic": float(latest["systolic"]) if latest["systolic"] is not None else None,
+        "latest_diastolic": float(latest["diastolic"]) if latest["diastolic"] is not None else None,
+        "at": latest["valid_from"],
         "spark": _spark_points(vals),
     }
 
@@ -244,8 +294,16 @@ def metric_index(conn: Connection) -> dict[str, list[dict[str, Any]]]:
         if card is None:
             card = {"key": key, "label": m["label"], "desc": m["desc"], "unit": m["unit"],
                     "color": m["color"], "group": m["group"], "digits": m["digits"],
-                    "value": None, "delta": None, "dir": "flat", "spark": ""}
+                    "value": None, "delta": None, "dir": "flat", "per_week": None, "spark": ""}
         groups[m["group"]].append(card)
+    bp = blood_pressure_row(conn)
+    if bp is not None:
+        groups["body"].append({
+            "key": "blood_pressure", "label": "Blood pressure", "desc": "Withings",
+            "unit": "mmHg", "color": "#6dd0b0", "group": "body", "bp": True,
+            "systolic": bp["latest_systolic"], "diastolic": bp["latest_diastolic"],
+            "spark": bp["spark"], "href": "/metrics/blood_pressure",
+        })
     return groups
 
 
@@ -275,7 +333,49 @@ def metric_series(conn: Connection, metric: str, start: date | datetime, end: da
          "max": float(r["max"]) if r["max"] is not None else None}
         for r in rows
     ]
-    return {"metric": metric, "label": m["label"], "unit": m["unit"], "bucket": bucket, "points": points}
+    out = {"metric": metric, "label": m["label"], "unit": m["unit"], "bucket": bucket, "points": points}
+    if band := m.get("band"):
+        bdcol = band["date_col"]
+        band_sql = f"""
+            SELECT time_bucket(%(bucket)s::interval, {bdcol}::timestamptz) AS t,
+                   avg({band['lo']}) AS lo, avg({band['hi']}) AS hi
+            FROM {band['view']}
+            WHERE {bdcol}::timestamptz >= %(start)s
+              AND {bdcol}::timestamptz < %(end)s
+              AND {band['lo']} IS NOT NULL
+              AND {band['hi']} IS NOT NULL
+            GROUP BY t ORDER BY t
+        """
+        with conn.cursor() as cur:
+            cur.execute(band_sql, {"bucket": bucket, "start": start_dt, "end": end_dt})
+            band_rows = cur.fetchall()
+        out["band"] = [
+            {"t": int(r["t"].timestamp()), "lo": float(r["lo"]), "hi": float(r["hi"])}
+            for r in band_rows
+            if r["lo"] is not None and r["hi"] is not None
+        ]
+    return out
+
+
+def blood_pressure_detail(conn: Connection) -> dict[str, Any]:
+    with conn.cursor() as cur:
+        cur.execute("""
+            SELECT valid_from, systolic, diastolic
+            FROM canonical.blood_pressure
+            WHERE systolic IS NOT NULL AND diastolic IS NOT NULL
+            ORDER BY valid_from DESC
+            LIMIT 12
+        """)
+        rows = cur.fetchall()
+    recent = [
+        {
+            "valid_from": r["valid_from"],
+            "systolic": float(r["systolic"]),
+            "diastolic": float(r["diastolic"]),
+        }
+        for r in rows
+    ]
+    return {"latest": recent[0] if recent else None, "recent": recent}
 
 
 def metric_detail(conn: Connection, metric: str) -> dict[str, Any]:
@@ -341,14 +441,17 @@ def sleep_detail(conn: Connection) -> dict[str, Any] | None:
             ORDER BY started_at
         """, {"src": night["source"], "uid": night["session_uid"]})
         stages = cur.fetchall()
-    # hypnogram geometry: map each segment to an x-range [0,1] and a stage lane.
+    # hypnogram geometry: reserve the left side for lane labels, then map each
+    # segment into the remaining plot range.
     t0 = night["started_at"].timestamp()
     total = max(night["ended_at"].timestamp() - t0, 1.0)
+    plot_left = 18.0
+    plot_width = 100.0 - plot_left
     lanes = {"AWAKE": 0, "REM": 1, "LIGHT": 2, "DEEP": 3}
     segs = []
     for st in stages:
-        x = (st["started_at"].timestamp() - t0) / total * 100.0
-        w = float(st["dur_s"]) / total * 100.0
+        x = plot_left + (st["started_at"].timestamp() - t0) / total * plot_width
+        w = float(st["dur_s"]) / total * plot_width
         segs.append({"stage": st["stage"], "x": x, "w": max(w, 0.4),
                      "lane": lanes.get(st["stage"].upper(), 2)})
     return {"night": night, "segments": segs}

@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Blood pressure · anduin{% endblock %}
+{% block content %}
+<div class="topbar">
+  <a class="back" href="/metrics">‹ Metrics</a>
+  <span class="title">Blood pressure</span>
+  <span class="spacer"></span>
+</div>
+
+{% set latest = detail.latest %}
+<div style="text-align:center;padding:10px 0 10px;">
+  <div class="stat-label">Latest</div>
+  {% if latest %}
+  <div class="num" style="color:var(--text);font-weight:700;font-size:52px;line-height:1;margin-top:6px;">{{ latest.systolic|round|int }}/{{ latest.diastolic|round|int }}<span style="font-size:20px;color:var(--muted);font-weight:500;"> mmHg</span></div>
+  <div class="muted" style="font-size:12px;margin-top:10px;">{{ latest.valid_from|fmt_date }}</div>
+  {% else %}
+  <div class="num dim" style="font-size:44px;margin-top:8px;">—</div>
+  <div class="muted" style="font-size:12px;margin-top:8px;">No blood pressure readings yet.</div>
+  {% endif %}
+</div>
+
+{% if detail.recent %}
+<div class="section-label" style="margin-top:18px;">Recent readings</div>
+<div class="list">
+  {% for r in detail.recent %}
+  <div class="row">
+    <span style="color:var(--text2);font-size:13.5px;flex:1;">{{ r.valid_from|fmt_date }}</span>
+    <span class="num" style="color:var(--text);font-weight:600;font-size:14px;text-align:right;">{{ r.systolic|round|int }}/{{ r.diastolic|round|int }} <span class="unit">mmHg</span></span>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+{% endblock %}

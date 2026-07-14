@@ -21,8 +21,7 @@
       <circle cx="50" cy="50" r="43" fill="none" stroke="rgba(255,255,255,.07)" stroke-width="7"/>
       <circle cx="50" cy="50" r="43" fill="none" stroke="var(--teal)" stroke-width="7"
               stroke-linecap="round" stroke-dasharray="270.2"
-              stroke-dashoffset="{{ (270.2 * (1 - frac)) | round(1) }}"
-              style="filter:drop-shadow(0 0 6px rgba(52,211,194,.5));"/>
+              stroke-dashoffset="{{ (270.2 * (1 - frac)) | round(1) }}"/>
     </svg>
     <div class="ring-center">
       <div class="ring-big num">{{ (sleep.minutes_asleep // 60) }}<span class="unit">h</span> {{ '%02d' % (sleep.minutes_asleep % 60) }}<span class="unit">m</span></div>
@@ -71,17 +70,6 @@
   </div>
   <div class="bar"><span style="width:{{ [steps.value / step_goal * 100, 100] | min | round | int }}%;"></span></div>
 </a>
-{% endif %}
-
-{# ---- blood pressure (real Withings data) ---- #}
-{% if bp %}
-<div class="card" style="margin-top:12px;">
-  <div class="row-between">
-    <span class="stat-label">Blood pressure</span>
-    <span class="dim" style="font-size:11px;">{{ bp.valid_from | fmt_date }}</span>
-  </div>
-  <div class="stat-med num">{{ bp.systolic | round | int }}/{{ bp.diastolic | round | int }} <span class="unit">mmHg</span></div>
-</div>
 {% endif %}
 
 {# ---- recent workouts ---- #}

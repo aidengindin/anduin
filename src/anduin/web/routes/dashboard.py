@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
@@ -18,7 +18,7 @@ router = APIRouter()
 @router.get("/", response_class=HTMLResponse)
 def home(request: Request, conn: Connection = Depends(get_conn)) -> HTMLResponse:
     data = queries.home(conn)
-    now = datetime.now(timezone.utc)
+    now = datetime.now().astimezone()
     hour = now.hour
     greeting = "Good morning" if hour < 12 else "Good afternoon" if hour < 18 else "Good evening"
     return templates.TemplateResponse(

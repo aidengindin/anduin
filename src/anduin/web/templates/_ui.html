@@ -5,7 +5,11 @@
 {% endmacro %}
 
 {% macro deltaline(c) %}
-{% if c.delta is not none %}<div class="delta {{ c.dir }} num" style="margin-top:4px;">{{ '↓' if c.delta < 0 else '↑' }} {{ c.delta|abs|fmt_num(c.digits) }}{% if c.unit %} {{ c.unit }}{% endif %}</div>{% endif %}
+{% if c.per_week is defined and c.per_week is not none %}
+<div class="delta {{ c.dir }} num" style="margin-top:4px;">{{ '↓' if c.per_week < 0 else '↑' }} {{ c.per_week|abs|fmt_num(c.digits) }}{% if c.unit %} {{ c.unit }}{% endif %}/wk</div>
+{% elif c.delta is not none %}
+<div class="delta {{ c.dir }} num" style="margin-top:4px;">{{ '↓' if c.delta < 0 else '↑' }} {{ c.delta|abs|fmt_num(c.digits) }}{% if c.unit %} {{ c.unit }}{% endif %}</div>
+{% endif %}
 {% endmacro %}
 
 {# recovery pill: big value + sparkline + optional status chip #}
@@ -41,14 +45,22 @@
 
 {# metric row for the Metrics index / feed #}
 {% macro metric_row(c) %}
-<a class="row" href="{{ '/metrics/' + c.key }}">
+<a class="row" href="{{ c.href if c.href is defined else '/metrics/' + c.key }}">
   <span class="dot" style="background:{{ c.color }};"></span>
   <div class="main"><div class="name">{{ c.label }}</div><div class="desc">{{ c.desc }}</div></div>
   {{ spark(c.spark, c.color) }}
   <div class="rt">
-    {% if c.value is not none %}
+    {% if c.bp is defined and c.bp %}
+      {% if c.systolic is not none and c.diastolic is not none %}
+      <div class="v">{{ c.systolic|round|int }}/{{ c.diastolic|round|int }}<span class="unit"> {{ c.unit }}</span></div>
+      {% else %}<div class="v dim">—</div>{% endif %}
+    {% elif c.value is not none %}
       <div class="v">{{ c.value|fmt_num(c.digits) }}{% if c.unit %}<span class="unit">{{ c.unit }}</span>{% endif %}</div>
-      {% if c.delta is not none %}<div class="delta {{ c.dir }} num" style="font-size:11px;">{{ '↓' if c.delta < 0 else '↑' }} {{ c.delta|abs|fmt_num(c.digits) }}</div>{% endif %}
+      {% if c.per_week is defined and c.per_week is not none %}
+      <div class="delta {{ c.dir }} num" style="font-size:11px;">{{ '↓' if c.per_week < 0 else '↑' }} {{ c.per_week|abs|fmt_num(c.digits) }}{% if c.unit %} {{ c.unit }}{% endif %}/wk</div>
+      {% elif c.delta is not none %}
+      <div class="delta {{ c.dir }} num" style="font-size:11px;">{{ '↓' if c.delta < 0 else '↑' }} {{ c.delta|abs|fmt_num(c.digits) }}</div>
+      {% endif %}
     {% else %}<div class="v dim">—</div>{% endif %}
   </div>
   <span class="chev">›</span>

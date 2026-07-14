@@ -48,7 +48,7 @@
     el.innerHTML = '<p class="chart-empty">' + text + "</p>";
   }
 
-  function lineChart(el, xs, series, unit) {
+  function lineChart(el, xs, series, unit, bands) {
     if (!xs.length) {
       emptyMsg(el, "No data in this range.");
       return;
@@ -60,6 +60,7 @@
         legend: { show: false },
         scales: { x: { time: true } },
         axes: [axis(), axis({ size: 60, label: unit || "" })],
+        bands: bands || [],
         series: series,
       },
       sizeFor(el)
@@ -79,13 +80,32 @@
         const min = pts.map(function (p) { return p.min; });
         const max = pts.map(function (p) { return p.max; });
         const color = el.dataset.color || "#34d3c2";
+        const bandByT = new Map((d.band || []).map(function (p) { return [p.t, p]; }));
+        const lo = xs.map(function (t) {
+          const b = bandByT.get(t);
+          return b ? b.lo : null;
+        });
+        const hi = xs.map(function (t) {
+          const b = bandByT.get(t);
+          return b ? b.hi : null;
+        });
         const series = [
           {},
+        ];
+        const bands = [];
+        if ((d.band || []).length) {
+          const loIdx = series.length;
+          series.push({ label: "normal low", stroke: "transparent", _vals: lo });
+          const hiIdx = series.length;
+          series.push({ label: "normal high", stroke: "transparent", _vals: hi });
+          bands.push({ series: [hiIdx, loIdx], fill: color + "1f" });
+        }
+        series.push(
           { label: "min", stroke: color + "33", _vals: min },
           { label: "max", stroke: color + "33", _vals: max },
           { label: d.label || "avg", stroke: color, width: 2.4, _vals: avg },
-        ];
-        lineChart(el, xs, series, d.unit);
+        );
+        lineChart(el, xs, series, d.unit, bands);
       })
       .catch(function () { emptyMsg(el, "Failed to load."); });
   }

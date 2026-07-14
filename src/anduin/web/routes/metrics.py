@@ -31,6 +31,15 @@ def sleep_page(request: Request, conn: Connection = Depends(get_conn)) -> HTMLRe
     )
 
 
+@router.get("/metrics/blood_pressure", response_class=HTMLResponse)
+def blood_pressure_page(request: Request, conn: Connection = Depends(get_conn)) -> HTMLResponse:
+    return templates.TemplateResponse(
+        request,
+        "blood_pressure.html",
+        {"active": "metrics", "detail": queries.blood_pressure_detail(conn)},
+    )
+
+
 @router.get("/metrics/{metric}", response_class=HTMLResponse)
 def metric_page(
     request: Request, metric: str,
