@@ -47,7 +47,18 @@ VALUES
     ('sleep_hrv',      'always', 'google_health', 'fitbit_air', 10, '-infinity', 'sleep-bound metric'),
     ('sleep_skin_temp','always', 'google_health', 'fitbit_air', 10, '-infinity', 'sleep-bound metric'),
 
-    ('body_weight',    'always', 'withings',      NULL,         10, '-infinity', 'withings scale owns body weight')
+    ('body_weight',    'always', 'withings',      NULL,         10, '-infinity', 'withings scale owns body weight'),
+
+    -- Withings owns body composition + blood pressure (sole source for these).
+    ('body_fat_ratio',            'always', 'withings', NULL, 10, '-infinity', 'withings scale'),
+    ('fat_mass',                  'always', 'withings', NULL, 10, '-infinity', 'withings scale'),
+    ('fat_free_mass',             'always', 'withings', NULL, 10, '-infinity', 'withings scale'),
+    ('muscle_mass',               'always', 'withings', NULL, 10, '-infinity', 'withings scale'),
+    ('bone_mass',                 'always', 'withings', NULL, 10, '-infinity', 'withings scale'),
+    ('hydration',                 'always', 'withings', NULL, 10, '-infinity', 'withings scale'),
+    ('visceral_fat',              'always', 'withings', NULL, 10, '-infinity', 'withings scale'),
+    ('blood_pressure_systolic',   'always', 'withings', NULL, 10, '-infinity', 'withings BP monitor'),
+    ('blood_pressure_diastolic',  'always', 'withings', NULL, 10, '-infinity', 'withings BP monitor')
 ON CONFLICT DO NOTHING;
 
 -- Stride factors. Deriving in-workout steps from a cadence stream requires

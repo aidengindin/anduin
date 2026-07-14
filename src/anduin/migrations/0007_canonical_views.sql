@@ -105,6 +105,53 @@ SELECT * FROM canonical.daily_metrics WHERE metric = 'respiratory_rate';
 CREATE OR REPLACE VIEW canonical.body_weight AS
 SELECT * FROM canonical.samples WHERE metric = 'body_weight';
 
+-- Withings body-composition panel (all from the scale, same measuregrp as
+-- weight). Each is a plain per-metric view over canonical.samples.
+CREATE OR REPLACE VIEW canonical.body_fat_ratio AS
+SELECT * FROM canonical.samples WHERE metric = 'body_fat_ratio';
+
+CREATE OR REPLACE VIEW canonical.fat_mass AS
+SELECT * FROM canonical.samples WHERE metric = 'fat_mass';
+
+CREATE OR REPLACE VIEW canonical.fat_free_mass AS
+SELECT * FROM canonical.samples WHERE metric = 'fat_free_mass';
+
+CREATE OR REPLACE VIEW canonical.muscle_mass AS
+SELECT * FROM canonical.samples WHERE metric = 'muscle_mass';
+
+CREATE OR REPLACE VIEW canonical.bone_mass AS
+SELECT * FROM canonical.samples WHERE metric = 'bone_mass';
+
+CREATE OR REPLACE VIEW canonical.hydration AS
+SELECT * FROM canonical.samples WHERE metric = 'hydration';
+
+CREATE OR REPLACE VIEW canonical.visceral_fat AS
+SELECT * FROM canonical.samples WHERE metric = 'visceral_fat';
+
+-- Blood pressure (from the BP monitor). Systolic and diastolic arrive as
+-- separate measures in one measuregrp sharing a timestamp, so the individual
+-- metric views expose the raw stream and canonical.blood_pressure re-joins them
+-- on (valid_from) into the conventional systolic/diastolic reading. Pulse
+-- (Withings meastype 11) is intentionally not ingested.
+CREATE OR REPLACE VIEW canonical.blood_pressure_systolic AS
+SELECT * FROM canonical.samples WHERE metric = 'blood_pressure_systolic';
+
+CREATE OR REPLACE VIEW canonical.blood_pressure_diastolic AS
+SELECT * FROM canonical.samples WHERE metric = 'blood_pressure_diastolic';
+
+CREATE OR REPLACE VIEW canonical.blood_pressure AS
+SELECT
+    s.valid_from,
+    s.source,
+    s.device,
+    s.value AS systolic,
+    d.value AS diastolic,
+    s.unit  AS unit
+FROM canonical.samples s
+JOIN canonical.samples d
+  ON d.metric = 'blood_pressure_diastolic' AND d.valid_from = s.valid_from
+WHERE s.metric = 'blood_pressure_systolic';
+
 -- Per-workout energy. Calories come from the source-supplied summary for every
 -- sport. The kJ->kcal path (icu_joules / 4184) is ONLY meaningful for cycling
 -- (metabolic efficiency ~24% x 4.184 J/cal ~= 1.0, a coincidence, not physics),

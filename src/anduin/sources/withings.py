@@ -1,10 +1,17 @@
-"""Withings extractor — body weight only.
+"""Withings extractor — body composition + blood pressure.
 
 Endpoint: POST https://wbsapi.withings.net/measure?action=getmeas with
-meastype=1 (weight, kg). OAuth2 via the helper in anduin.oauth.
+meastypes=<comma list> (category=1, real measurements). OAuth2 via the helper
+in anduin.oauth.
 
-Withings returns weight as (value, unit) where final value = value * 10**unit.
-Natural key = grpid (Withings measurement-group ID, stable across re-pulls).
+Withings returns each measure as (value, unit) where final value = value *
+10**unit, tagged with an integer `type`. One measuregrp carries several measures
+(a scale group: weight + fat + muscle + ...; a BP-monitor group: systolic +
+diastolic + pulse); each maps to its own raw.samples row via _MEASURE_TYPES.
+
+Natural key = grpid (Withings measurement-group ID, stable across re-pulls). The
+raw.samples conflict key is (source, metric, natural_key, valid_from), so the
+shared grpid never collides across the distinct metrics in one group.
 """
 
 from __future__ import annotations
@@ -24,7 +31,22 @@ from anduin.upsert import upsert_samples
 logger = logging.getLogger(__name__)
 
 MEAS_URL = "https://wbsapi.withings.net/measure"
-MEASTYPE_WEIGHT = 1
+
+# Withings meastype -> (metric, unit, recording_method). Only these types are
+# requested and mapped; anything else in the response is ignored. Values are all
+# confirmed present in live getmeas data.
+_MEASURE_TYPES: dict[int, tuple[str, str, str]] = {
+    1:   ("body_weight",               "kg",    "scale"),
+    5:   ("fat_free_mass",             "kg",    "scale"),
+    6:   ("body_fat_ratio",            "%",     "scale"),
+    8:   ("fat_mass",                  "kg",    "scale"),
+    76:  ("muscle_mass",               "kg",    "scale"),
+    77:  ("hydration",                 "kg",    "scale"),
+    88:  ("bone_mass",                 "kg",    "scale"),
+    170: ("visceral_fat",              "index", "scale"),
+    9:   ("blood_pressure_diastolic",  "mmHg",  "bp_monitor"),
+    10:  ("blood_pressure_systolic",   "mmHg",  "bp_monitor"),
+}
 
 
 def _measure_value(m: dict) -> float | None:
@@ -40,11 +62,12 @@ def _measure_value(m: dict) -> float | None:
     return float(raw_value) * (10 ** int(raw_unit))
 
 
-def _weight_rows(body: dict | None) -> list[dict]:
-    """Map a getmeas response body into raw.samples rows for body weight.
+def _measure_rows(body: dict | None) -> list[dict]:
+    """Map a getmeas response body into raw.samples rows.
 
-    Skips groups without a stable grpid/date and measures that are not
-    weight or that are missing their value/unit (malformed).
+    Emits one row per mapped measure (see _MEASURE_TYPES). Skips groups without
+    a stable grpid/date, measures of unmapped types, and measures missing their
+    value/unit (malformed).
     """
     rows: list[dict] = []
     for grp in (body or {}).get("measuregrps", []) or []:
@@ -55,8 +78,10 @@ def _weight_rows(body: dict | None) -> list[dict]:
         valid_at = datetime.fromtimestamp(ts, tz=timezone.utc)
         device = grp.get("model") or grp.get("deviceid")
         for m in grp.get("measures", []) or []:
-            if m.get("type") != MEASTYPE_WEIGHT:
+            mapping = _MEASURE_TYPES.get(m.get("type"))
+            if mapping is None:
                 continue
+            metric, unit, recording_method = mapping
             value = _measure_value(m)
             if value is None:
                 logger.warning("withings: skipping malformed measure in grp %s: %r", grpid, m)
@@ -64,10 +89,10 @@ def _weight_rows(body: dict | None) -> list[dict]:
             rows.append({
                 "source": "withings",
                 "device": str(device) if device is not None else None,
-                "recording_method": "scale",
-                "metric": "body_weight",
+                "recording_method": recording_method,
+                "metric": metric,
                 "value": value,
-                "unit": "kg",
+                "unit": unit,
                 "valid_from": valid_at,
                 "valid_to": valid_at,
                 "natural_key": grpid,
@@ -111,7 +136,7 @@ def extract(
             MEAS_URL,
             data={
                 "action": "getmeas",
-                "meastype": MEASTYPE_WEIGHT,
+                "meastypes": ",".join(str(t) for t in sorted(_MEASURE_TYPES)),
                 "category": 1,
                 "startdate": start_ts,
                 "enddate": end_ts,
@@ -126,10 +151,10 @@ def extract(
         result.error(f"withings getmeas non-zero status: {resp!r}")
         return result
 
-    rows = _weight_rows(resp.get("body") or {})
+    rows = _measure_rows(resp.get("body") or {})
 
     if dry_run:
-        logger.info("withings: would upsert %d weight rows", len(rows))
+        logger.info("withings: would upsert %d measure rows", len(rows))
         return result
 
     try:
