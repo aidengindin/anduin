@@ -57,7 +57,7 @@
       {
         title: "",
         cursor: { y: false },
-        legend: { show: true },
+        legend: { show: false },
         scales: { x: { time: true } },
         axes: [axis(), axis({ size: 60, label: unit || "" })],
         series: series,
@@ -78,11 +78,12 @@
         const avg = pts.map(function (p) { return p.avg; });
         const min = pts.map(function (p) { return p.min; });
         const max = pts.map(function (p) { return p.max; });
+        const color = el.dataset.color || "#34d3c2";
         const series = [
           {},
-          { label: "min", stroke: "#7aa2f733", _vals: min },
-          { label: "max", stroke: "#7aa2f733", _vals: max },
-          { label: d.label || "avg", stroke: "#7aa2f7", width: 2, _vals: avg },
+          { label: "min", stroke: color + "33", _vals: min },
+          { label: "max", stroke: color + "33", _vals: max },
+          { label: d.label || "avg", stroke: color, width: 2.4, _vals: avg },
         ];
         lineChart(el, xs, series, d.unit);
       })

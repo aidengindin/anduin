@@ -62,8 +62,8 @@ def test_metric_series_shapes_points_and_epoch():
         {"t": _dt(2026, 7, 1, 1), "avg": None, "min": None, "max": None},
     ]
     conn = FakeConn([rows])
-    out = queries.metric_series(conn, "heart_rate", date(2026, 7, 1), date(2026, 7, 2))
-    assert out["metric"] == "heart_rate"
+    out = queries.metric_series(conn, "resting_heart_rate", date(2026, 7, 1), date(2026, 7, 2))
+    assert out["metric"] == "resting_heart_rate"
     assert out["unit"] == "bpm"
     assert out["points"][0] == {"t": int(_dt(2026, 7, 1).timestamp()), "avg": 60.0, "min": 55.0, "max": 70.0}
     assert out["points"][1]["avg"] is None
@@ -88,19 +88,9 @@ def test_bucket_widens_with_range(since, until, expected):
     assert out["bucket"] == expected
 
 
-def test_daily_summary_merges_four_queries_by_day():
-    steps = [{"day": date(2026, 7, 1), "steps": 8000.0}, {"day": date(2026, 7, 2), "steps": 5000.0}]
-    energy = [{"day": date(2026, 7, 1), "kcal": 2500.0}]
-    weight = [{"day": date(2026, 7, 2), "kg": 80.5}]
-    workouts = [{"day": date(2026, 7, 1), "n": 2}]
-    conn = FakeConn([steps, energy, weight, workouts])
-    out = queries.daily_summary(conn, date(2026, 7, 1), date(2026, 7, 3))
-    # Newest first.
-    assert [d["date"] for d in out] == [date(2026, 7, 2), date(2026, 7, 1)]
-    d1 = next(d for d in out if d["date"] == date(2026, 7, 1))
-    assert d1 == {"date": date(2026, 7, 1), "steps": 8000.0, "energy_kcal": 2500.0, "weight_kg": None, "workouts": 2}
-    d2 = next(d for d in out if d["date"] == date(2026, 7, 2))
-    assert d2["weight_kg"] == 80.5 and d2["energy_kcal"] is None and d2["workouts"] == 0
+# test_daily_summary_merges_four_queries_by_day was removed — daily_summary()
+# was a planned aggregation helper that was superseded by queries.home() in the
+# current sleep-hero home design. See queries.home() for the current approach.
 
 
 def test_list_workouts_maps_header_and_flags():

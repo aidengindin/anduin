@@ -1,71 +1,59 @@
 {% extends "base.html" %}
-{% set active = 'workouts' %}
 {% block title %}{{ header.sport or "Workout" }} · anduin{% endblock %}
 {% block content %}
-<p><a href="/workouts">← Workouts</a></p>
-<hgroup>
-  <h1>{{ header.sport or "Workout" }}{% if header.program %} <small>· {{ header.program }}</small>{% endif %}</h1>
-  <p>{{ header.started_at | fmt_dt }} · {{ header.duration_s | fmt_dur }} ·
-    {% if header.source_url %}<a href="{{ header.source_url }}" target="_blank" rel="noopener">View on {{ header.source }} ↗</a>{% else %}<small>{{ header.source }}</small>{% endif %}
-  </p>
-</hgroup>
+{% set accent = '#ef6b5e' if header.is_strength else '#f0a63c' %}
+<div class="topbar">
+  <a class="back" href="/workouts" style="color:{{ accent }};">‹ Workouts</a>
+  <span class="title">Workout</span>
+  <span class="spacer"></span>
+</div>
 
-<div class="tiles">
-  <article class="tile">
-    <p class="tile-label">Calories</p>
-    <p class="tile-value">{{ header.calories | fmt_num(0) }}{% if header.calories_is_derived %} <small>≈</small>{% endif %}</p>
-  </article>
-  <article class="tile">
-    <p class="tile-label">Steps</p>
-    <p class="tile-value">{{ header.steps | fmt_num(0) }}{% if header.steps_is_derived %} <small>≈</small>{% endif %}</p>
-  </article>
-  <article class="tile">
-    <p class="tile-label">Training load</p>
-    <p class="tile-value">{{ header.training_load | fmt_num(0) }}</p>
-  </article>
+<div class="wcard" style="padding:2px 2px 6px;">
+  <div class="wicon {{ 'strength' if header.is_strength else 'cardio' }}"><span></span></div>
+  <div style="flex:1;">
+    <div style="color:var(--text);font-family:'Space Grotesk';font-weight:700;font-size:20px;">{{ header.sport or "Workout" }}{% if header.program %} · {{ header.program }}{% endif %}</div>
+    <div class="muted" style="font-size:12.5px;margin-top:1px;">{{ header.started_at|fmt_dt }}{% if header.source_url %} · <a href="{{ header.source_url }}" target="_blank" rel="noopener" style="color:{{ accent }};">{{ header.source }} ↗</a>{% else %} · {{ header.source }}{% endif %}</div>
+  </div>
+</div>
+
+<div class="grid c3" style="margin-top:14px;">
+  <div class="card" style="padding:13px 14px;"><div class="muted" style="font-size:11px;">Duration</div><div class="num" style="color:var(--text);font-weight:700;font-size:19px;margin-top:3px;">{{ header.duration_s|fmt_dur }}</div></div>
+  <div class="card" style="background:linear-gradient(135deg,{{ accent }}22,rgba(20,24,31,0));border-color:{{ accent }}47;padding:13px 14px;"><div style="color:{{ accent }};font-size:11px;">Load</div><div class="num" style="color:var(--text);font-weight:700;font-size:19px;margin-top:3px;">{{ header.training_load|fmt_num(0) }}</div></div>
+  <div class="card" style="padding:13px 14px;"><div class="muted" style="font-size:11px;">Calories</div><div class="num" style="color:var(--text);font-weight:700;font-size:19px;margin-top:3px;">{{ header.calories|fmt_num(0) }}{% if header.calories_is_derived %}<span class="muted"> ≈</span>{% endif %}</div></div>
+  {% if header.steps %}
+  <div class="card" style="padding:13px 14px;"><div class="muted" style="font-size:11px;">Steps</div><div class="num" style="color:var(--text);font-weight:700;font-size:19px;margin-top:3px;">{{ header.steps|fmt_num(0) }}{% if header.steps_is_derived %}<span class="muted"> ≈</span>{% endif %}</div></div>
+  {% endif %}
 </div>
 
 {% if streams %}
-<h2>Streams</h2>
+<div class="section-label" style="margin-top:22px;">Streams</div>
 {% for metric, points in streams.items() %}
-<article>
-  <header>{{ metric }}</header>
-  <div class="chart"
-       data-chart="stream-line"
-       data-series='{{ points | tojson }}'></div>
-</article>
+<div class="card" style="padding:14px 12px 10px;margin-bottom:12px;">
+  <div class="stat-label" style="margin-bottom:6px;">{{ metric }}</div>
+  <div class="chart" data-chart="stream-line" data-color="{{ accent }}" data-series='{{ points|tojson }}' style="min-height:140px;"></div>
+</div>
 {% endfor %}
 {% endif %}
 
 {% if exercises %}
-<h2>Exercises</h2>
+<div class="section-label" style="margin-top:22px;">Exercises</div>
 {% for ex in exercises %}
-<article>
-  <header>{{ ex.name }}{% if ex.is_unilateral %} <small>· unilateral</small>{% endif %}</header>
-  <div class="table-scroll">
-  <table>
-    <thead>
-      <tr><th>Set</th><th>Weight (kg)</th><th>Reps</th>{% if ex.is_unilateral %}<th>Left reps</th>{% endif %}<th>RPE</th><th></th></tr>
-    </thead>
-    <tbody>
-      {% for s in ex.sets %}
-      <tr {% if s.is_warmup %}class="warmup"{% endif %}>
-        <td>{{ s.set_index }}</td>
-        <td>{{ s.weight_kg | fmt_num(1) }}</td>
-        <td>{{ s.reps if s.reps is not none else "—" }}</td>
-        {% if ex.is_unilateral %}<td>{{ s.left_reps if s.left_reps is not none else "—" }}</td>{% endif %}
-        <td>{{ s.rpe | fmt_num(1) }}</td>
-        <td>{% if s.is_warmup %}<small>warmup</small>{% endif %}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+<div class="ex">
+  <div class="ex-head"><span class="en">{{ ex.name }}</span><span class="num muted" style="font-size:11.5px;">{{ ex.sets|length }} sets{% if ex.is_unilateral %} · unilateral{% endif %}</span></div>
+  <div style="padding:4px 0 8px;">
+    {% for s in ex.sets %}
+    <div class="set">
+      <span class="si num">{{ 'W' if s.is_warmup else s.set_index + 1 }}</span>
+      <span class="sv num"{% if not s.is_warmup and loop.last %} style="color:var(--text);font-weight:600;"{% endif %}>{{ s.weight_kg|fmt_num(1) }} kg × {{ s.reps if s.reps is not none else '—' }}{% if ex.is_unilateral and s.left_reps is not none %} / {{ s.left_reps }}{% endif %}</span>
+      <span class="num muted">{% if s.rpe is not none %}RPE {{ s.rpe|fmt_num(1) }}{% else %}—{% endif %}</span>
+    </div>
+    {% endfor %}
   </div>
-</article>
+</div>
 {% endfor %}
 {% endif %}
 
 {% if not streams and not exercises %}
-<p>No streams or set data recorded for this workout.</p>
+<div class="card" style="margin-top:14px;"><div class="empty-state">No streams or set data for this workout.</div></div>
 {% endif %}
 {% endblock %}

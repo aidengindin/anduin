@@ -1,39 +1,28 @@
 {% extends "base.html" %}
-{% set active = 'workouts' %}
+{% import "_ui.html" as ui %}
 {% block title %}Workouts · anduin{% endblock %}
 {% block content %}
-<hgroup>
-  <h1>Workouts</h1>
-  <p>Activities across cardio and strength.</p>
-</hgroup>
-
-{% set action = "/workouts" %}
-{% set extra_sport = true %}
-{% include "_range_form.html" with context %}
-
-<div class="table-scroll">
-<table>
-  <thead>
-    <tr>
-      <th>Started</th><th>Sport</th><th>Duration</th>
-      <th>Calories</th><th>Steps</th><th>Load</th><th>Source</th>
-    </tr>
-  </thead>
-  <tbody>
-    {% for w in workouts %}
-    <tr>
-      <td><a href="/workouts/{{ w.source }}/{{ w.activity_uid }}">{{ w.started_at | fmt_dt }}</a></td>
-      <td>{{ w.sport or "—" }}{% if w.program %} <small>· {{ w.program }}</small>{% endif %}</td>
-      <td>{{ w.duration_s | fmt_dur }}</td>
-      <td>{{ w.calories | fmt_num(0) }}{% if w.calories_is_derived %} <small title="derived from power">≈</small>{% endif %}</td>
-      <td>{{ w.steps | fmt_num(0) }}{% if w.steps_is_derived %} <small title="derived from cadence">≈</small>{% endif %}</td>
-      <td>{{ w.training_load | fmt_num(0) }}</td>
-      <td><small>{% if w.source_url %}<a href="{{ w.source_url }}" target="_blank" rel="noopener">{{ w.source }} ↗</a>{% else %}{{ w.source }}{% endif %}</small></td>
-    </tr>
-    {% else %}
-    <tr><td colspan="7">No workouts in this range.</td></tr>
-    {% endfor %}
-  </tbody>
-</table>
+<div class="page-head">
+  <div>
+    <h1>Workouts</h1>
+    <div class="sub">Cardio &amp; strength · last 90 days</div>
+  </div>
 </div>
+
+{% if sports %}
+<div class="toggle" style="flex-wrap:wrap;">
+  <a class="{{ 'on' if not selected_sport }}" href="/workouts">All</a>
+  {% for s in sports %}
+  <a class="{{ 'on' if selected_sport == s }}" href="/workouts?sport={{ s|urlencode }}">{{ s }}</a>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if workouts %}
+<div class="list">
+  {% for w in workouts %}{{ ui.workout_row(w) }}{% endfor %}
+</div>
+{% else %}
+<div class="card"><div class="empty-state">No workouts in this range.</div></div>
+{% endif %}
 {% endblock %}

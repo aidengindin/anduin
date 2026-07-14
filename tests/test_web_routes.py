@@ -8,7 +8,7 @@ pool-opening lifespan never runs.
 
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 
 import pytest
 from fastapi.testclient import TestClient
@@ -43,19 +43,44 @@ def test_healthz(client):
 
 
 def test_dashboard_renders(client, monkeypatch):
+    # Patch the whole queries.home() bundle — home page uses sleep-hero design.
     monkeypatch.setattr(
-        queries, "daily_summary",
-        lambda conn, s, e: [
-            {"date": date(2026, 7, 1), "steps": 8000.0, "energy_kcal": 2500.0, "weight_kg": 80.0, "workouts": 1},
-        ],
+        queries, "home",
+        lambda conn: {
+            "sleep": None,
+            "hrv": None,
+            "rhr": None,
+            "weight": None,
+            "body_fat": None,
+            "steps": None,
+            "step_goal": 10000,
+            "hrv_status": None,
+            "rhr_status": None,
+            "pmc": None,
+            "bp": None,
+            "workouts": [],
+        },
     )
     r = client.get("/")
     assert r.status_code == 200
-    assert "Daily summary" in r.text
-    assert "8,000" in r.text  # fmt_num with thousands separator
+    # The home template renders a greeting and a sleep hero card.
+    assert "Good" in r.text  # Good morning / Good afternoon / Good evening
+    assert "Sleep" in r.text
 
 
-def test_metrics_page_lists_all_metrics(client):
+def test_metrics_page_lists_all_metrics(client, monkeypatch):
+    # Patch metric_index so the route doesn't need a real DB connection.
+    def _fake_index(conn):
+        groups: dict = {"recovery": [], "body": [], "activity": []}
+        for key, m in queries.METRICS.items():
+            groups[m["group"]].append({
+                "key": key, "label": m["label"], "desc": m["desc"], "unit": m["unit"],
+                "color": m["color"], "group": m["group"], "digits": m["digits"],
+                "value": None, "delta": None, "dir": "flat", "spark": "",
+            })
+        return groups
+
+    monkeypatch.setattr(queries, "metric_index", _fake_index)
     r = client.get("/metrics")
     assert r.status_code == 200
     for meta in queries.METRICS.values():

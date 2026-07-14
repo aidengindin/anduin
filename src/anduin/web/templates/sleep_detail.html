@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}Sleep · anduin{% endblock %}
+{% block content %}
+<div class="topbar">
+  <a class="back" href="/metrics">‹ Metrics</a>
+  <span class="title">Sleep</span>
+  <span class="spacer"></span>
+</div>
+
+{% if not detail %}
+<div class="card"><div class="empty-state">No sleep recorded yet.<br>Sleep data flows once the device is connected.</div></div>
+{% else %}
+{% set n = detail.night %}
+{% set stage_colors = ['#8b93a2', '#34d3c2', '#7c8cff', '#4b5fd0'] %}
+{% set lane_names = ['Awake', 'REM', 'Light', 'Deep'] %}
+
+{# hero #}
+<div style="display:flex;align-items:flex-end;justify-content:space-between;padding:6px 2px 4px;">
+  <div>
+    <div class="stat-label">Time asleep · {{ n.started_at|fmt_date }}</div>
+    <div class="num" style="color:var(--text);font-weight:700;font-size:44px;line-height:1;margin-top:6px;">{{ n.minutes_asleep // 60 }}<span class="unit" style="font-size:22px;">h</span> {{ '%02d' % (n.minutes_asleep % 60) }}<span class="unit" style="font-size:22px;">m</span></div>
+  </div>
+</div>
+
+{# timing #}
+<div class="card" style="display:flex;align-items:center;gap:12px;margin-top:14px;">
+  <div style="text-align:center;flex:1;"><div class="muted" style="font-size:11px;">Bedtime</div><div class="num" style="color:var(--text);font-weight:600;font-size:16px;margin-top:2px;">{{ n.started_at|fmt_clock }}</div></div>
+  <div style="flex:1.4;height:3px;border-radius:2px;background:linear-gradient(90deg,#4056c8,#7c8cff,#34d3c2);"></div>
+  <div style="text-align:center;flex:1;"><div class="muted" style="font-size:11px;">Wake</div><div class="num" style="color:var(--text);font-weight:600;font-size:16px;margin-top:2px;">{{ n.ended_at|fmt_clock }}</div></div>
+</div>
+
+{# hypnogram #}
+<div class="card" style="margin-top:12px;">
+  <div class="row-between" style="margin-bottom:10px;"><span class="stat-label">Sleep stages</span><span class="muted" style="font-size:11px;">{{ n.time_in_bed_min|fmt_hm }} in bed</span></div>
+  <svg class="hyp" viewBox="0 0 100 62" preserveAspectRatio="none" style="width:100%;height:120px;display:block;">
+    {% for i in range(4) %}
+    <text x="0" y="{{ i*15 + 7 }}" fill="{{ stage_colors[i] }}" font-size="3.4">{{ lane_names[i] }}</text>
+    {% endfor %}
+    {% for s in detail.segments %}
+    <rect x="{{ s.x|round(2) }}" y="{{ s.lane*15 + 3 }}" width="{{ s.w|round(2) }}" height="8" rx="1.4" fill="{{ stage_colors[s.lane] }}"/>
+    {% endfor %}
+  </svg>
+</div>
+
+{# stage breakdown #}
+<div class="grid c2" style="margin-top:12px;">
+  {% set stages = [('Deep', n.deep_min, n.pct_deep, '#4b5fd0'), ('REM', n.rem_min, n.pct_rem, '#34d3c2'), ('Light', n.light_min, n.pct_light, '#7c8cff'), ('Awake', n.awake_min, n.pct_awake, '#8b93a2')] %}
+  {% for name, mins, pct, col in stages %}
+  <div class="card" style="padding:13px 15px;">
+    <div style="display:flex;align-items:center;gap:7px;"><span style="width:8px;height:8px;border-radius:2px;background:{{ col }};"></span><span class="muted" style="font-size:12px;font-weight:600;">{{ name }}</span></div>
+    <div class="num" style="color:var(--text);font-weight:700;font-size:19px;margin-top:5px;">{{ mins|fmt_hm }} <span class="muted" style="font-size:11px;font-weight:500;">{{ pct|round|int if pct is not none else 0 }}%</span></div>
+  </div>
+  {% endfor %}
+</div>
+
+{# efficiency + consistency #}
+<div class="grid c2" style="margin-top:12px;">
+  <div class="card">
+    <div class="stat-label">Efficiency</div>
+    <div class="stat-med num">{{ n.efficiency_pct|round|int }}<span class="unit">%</span></div>
+    <div class="bar sleep"><span style="width:{{ n.efficiency_pct|round|int }}%;"></span></div>
+  </div>
+  <div class="card">
+    <div class="stat-label">Consistency · SRI</div>
+    {% if n.sri is not none %}
+    <div class="stat-med num">{{ n.sri|round|int }}<span class="unit">/100</span></div>
+    <div class="bar sleep"><span style="width:{{ [[n.sri,0]|max,100]|min }}%;"></span></div>
+    {% else %}
+    <div class="stat-med num dim">—</div>
+    <div class="muted" style="font-size:11px;margin-top:6px;">Needs ≥7 nights</div>
+    {% endif %}
+  </div>
+</div>
+
+<div class="note">SRI (Sleep Regularity Index) measures how closely your sleep/wake timing matches recent nights — 100 is a perfectly consistent schedule.</div>
+{% endif %}
+{% endblock %}

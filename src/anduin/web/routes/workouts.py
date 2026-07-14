@@ -31,6 +31,7 @@ def workouts_list(
         request,
         "workouts_list.html",
         {
+            "active": "workouts",
             "workouts": rows,
             "sports": available,
             "selected_sport": sport,
@@ -50,4 +51,4 @@ def workout_detail(
     detail = queries.workout_detail(conn, source, activity_uid)
     if detail is None:
         raise HTTPException(status_code=404, detail="workout not found")
-    return templates.TemplateResponse(request, "workout_detail.html", detail)
+    return templates.TemplateResponse(request, "workout_detail.html", {"active": "workouts", **detail})

@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}{{ detail.meta.label }} · anduin{% endblock %}
+{% block content %}
+{% set c = detail.card %}
+{% set m = detail.meta %}
+<div class="topbar">
+  <a class="back" href="/metrics">‹ Metrics</a>
+  <span class="title">{{ m.label }}</span>
+  <span class="spacer"></span>
+</div>
+
+<div style="text-align:center;padding:10px 0 6px;">
+  <div class="stat-label">Latest</div>
+  {% if c %}
+  <div class="num" style="color:var(--text);font-weight:700;font-size:56px;line-height:1;margin-top:6px;">{{ c.value|fmt_num(c.digits) }}<span style="font-size:22px;color:var(--muted);font-weight:500;"> {{ m.unit }}</span></div>
+  {% if c.delta is not none %}
+  <div class="chip {{ 'balanced' if c.dir == 'down' else 'high' if c.dir == 'up' else 'pending' }}" style="margin-top:12px;">{{ '↓' if c.delta < 0 else '↑' }} {{ c.delta|abs|fmt_num(c.digits) }} {{ m.unit }} vs recent</div>
+  {% endif %}
+  {% else %}
+  <div class="num dim" style="font-size:44px;margin-top:8px;">—</div>
+  <div class="muted" style="font-size:12px;margin-top:8px;">No data yet — device not connected.</div>
+  {% endif %}
+</div>
+
+<div class="toggle">
+  {% for r in ranges %}
+  <a class="{{ 'on' if r.on }}" href="/metrics/{{ metric }}?since={{ r.since }}">{{ r.label }}</a>
+  {% endfor %}
+</div>
+
+<div class="card" style="padding:14px 12px 10px;">
+  <div class="chart" data-chart="metric-line" data-color="{{ m.color }}"
+       data-url="/api/metrics/{{ metric }}.json?since={{ since }}&until={{ until }}"></div>
+</div>
+
+<div class="grid c2" style="margin-top:14px;">
+  <div class="card"><div class="stat-label">7-day avg</div><div class="stat-med num">{{ detail.avg7|fmt_num(m.digits) }}{% if detail.avg7 is not none %}<span class="unit"> {{ m.unit }}</span>{% endif %}</div></div>
+  <div class="card"><div class="stat-label">7-day range</div><div class="stat-med num">{% if detail.lo is not none %}{{ detail.lo|fmt_num(m.digits) }}–{{ detail.hi|fmt_num(m.digits) }}{% else %}—{% endif %}</div></div>
+</div>
+
+{% if detail.recent %}
+<div class="section-label" style="margin-top:22px;">Recent readings</div>
+<div class="list">
+  {% for r in detail.recent %}
+  {% set frac = ((r.v - detail.lo) / (detail.hi - detail.lo) * 100) if detail.hi and detail.hi != detail.lo else 60 %}
+  <div class="row">
+    <span style="color:var(--text2);font-size:13.5px;flex:1;">{{ r.d|fmt_date }}</span>
+    <div style="width:90px;height:6px;border-radius:4px;background:rgba(255,255,255,.08);overflow:hidden;"><div style="width:{{ [[frac,4]|max,100]|min }}%;height:100%;background:{{ m.color }};"></div></div>
+    <span class="num" style="color:var(--text);font-weight:600;font-size:14px;width:52px;text-align:right;">{{ r.v|fmt_num(m.digits) }}</span>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<div class="note">Baselined against your own recent history — “normal” is relative to you, not a population.</div>
+{% endblock %}

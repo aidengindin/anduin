@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% import "_ui.html" as ui %}
+{% block title %}anduin{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <div class="sub">{{ today.strftime("%A, %b %-d") }}</div>
+    <h1>{{ greeting }}</h1>
+  </div>
+  <div class="avatar">A</div>
+</div>
+
+{# ---- sleep hero ring ---- #}
+{% if sleep %}
+{% set frac = [sleep.minutes_asleep / sleep_goal_min, 1.0] | min %}
+<a href="/sleep" style="display:block;color:inherit;">
+<div class="hero">
+  <div class="hero-kicker">Last night · Sleep</div>
+  <div class="ring">
+    <svg viewBox="0 0 100 100">
+      <circle cx="50" cy="50" r="43" fill="none" stroke="rgba(255,255,255,.07)" stroke-width="7"/>
+      <circle cx="50" cy="50" r="43" fill="none" stroke="var(--teal)" stroke-width="7"
+              stroke-linecap="round" stroke-dasharray="270.2"
+              stroke-dashoffset="{{ (270.2 * (1 - frac)) | round(1) }}"
+              style="filter:drop-shadow(0 0 6px rgba(52,211,194,.5));"/>
+    </svg>
+    <div class="ring-center">
+      <div class="ring-big num">{{ (sleep.minutes_asleep // 60) }}<span class="unit">h</span> {{ '%02d' % (sleep.minutes_asleep % 60) }}<span class="unit">m</span></div>
+      <div class="ring-sub">{{ (frac * 100) | round | int }}% of 8h goal</div>
+    </div>
+  </div>
+  <div class="hero-row">
+    <div><div class="v num">{{ sleep.efficiency_pct | round | int if sleep.efficiency_pct is not none else '—' }}%</div><div class="k">Efficiency</div></div>
+    <div class="div"></div>
+    <div><div class="v num">{{ sleep.started_at | fmt_clock }}</div><div class="k">Bedtime</div></div>
+    <div class="div"></div>
+    <div><div class="v num">{{ sleep.ended_at | fmt_clock }}</div><div class="k">Woke</div></div>
+  </div>
+</div>
+</a>
+{% else %}
+<div class="hero"><div class="hero-kicker">Sleep</div><div class="empty-state">No sleep recorded yet.</div></div>
+{% endif %}
+
+{# ---- HRV + RHR recovery pills ---- #}
+<div class="grid c2" style="margin-top:14px;">
+  {{ ui.pill(hrv, "HRV", hrv_status) }}
+  {{ ui.pill(rhr, "Resting HR", rhr_status) }}
+</div>
+
+{# ---- body + training row ---- #}
+<div class="grid c2" style="margin-top:12px;">
+  {{ ui.tile(weight, "Weight") }}
+  {% if pmc %}
+  <a class="card" href="/metrics/form" style="display:block;">
+    <div class="stat-label">Form · TSB</div>
+    <div class="stat-big num" style="color:{{ '#5fe0d2' if pmc.form >= 0 else '#f0a63c' }};">{{ pmc.form | fmt_signed }}</div>
+    <div class="delta flat num" style="margin-top:4px;">CTL {{ pmc.ctl | round | int }} · ATL {{ pmc.atl | round | int }}</div>
+  </a>
+  {% else %}
+  {{ ui.tile(body_fat, "Body fat") }}
+  {% endif %}
+</div>
+
+{# ---- steps ---- #}
+{% if steps %}
+<a class="card" href="/metrics/steps" style="display:block;margin-top:12px;">
+  <div class="row-between">
+    <span class="stat-label">Steps</span>
+    <span class="num" style="color:var(--text);font-weight:700;font-size:20px;">{{ steps.value | fmt_num }} <span class="dim" style="font-size:13px;font-weight:500;">/ {{ step_goal | fmt_num }}</span></span>
+  </div>
+  <div class="bar"><span style="width:{{ [steps.value / step_goal * 100, 100] | min | round | int }}%;"></span></div>
+</a>
+{% endif %}
+
+{# ---- blood pressure (real Withings data) ---- #}
+{% if bp %}
+<div class="card" style="margin-top:12px;">
+  <div class="row-between">
+    <span class="stat-label">Blood pressure</span>
+    <span class="dim" style="font-size:11px;">{{ bp.valid_from | fmt_date }}</span>
+  </div>
+  <div class="stat-med num">{{ bp.systolic | round | int }}/{{ bp.diastolic | round | int }} <span class="unit">mmHg</span></div>
+</div>
+{% endif %}
+
+{# ---- recent workouts ---- #}
+<div class="section">
+  <div class="section-label">Recent workouts <a href="/workouts">All ›</a></div>
+  {% if workouts %}
+  <div class="list">
+    {% for w in workouts %}{{ ui.workout_row(w) }}{% endfor %}
+  </div>
+  {% else %}
+  <div class="card"><div class="empty-state">No workouts yet.</div></div>
+  {% endif %}
+</div>
+{% endblock %}

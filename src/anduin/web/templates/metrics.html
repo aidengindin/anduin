@@ -1,21 +1,28 @@
 {% extends "base.html" %}
-{% set active = 'metrics' %}
+{% import "_ui.html" as ui %}
 {% block title %}Metrics · anduin{% endblock %}
 {% block content %}
-<hgroup>
-  <h1>Metrics</h1>
-  <p>Reconciled time-series across sources.</p>
-</hgroup>
+<div class="page-head">
+  <div>
+    <h1>Metrics</h1>
+    <div class="sub">Reconciled across sources</div>
+  </div>
+</div>
 
-{% set action = "/metrics" %}
-{% include "_range_form.html" with context %}
-
-{% for key, meta in metrics.items() %}
-<article>
-  <header>{{ meta.label }} <small>({{ meta.unit }})</small></header>
-  <div class="chart"
-       data-chart="metric-line"
-       data-url="/api/metrics/{{ key }}.json?since={{ since }}&until={{ until }}"></div>
-</article>
+{% set sections = [("recovery", "Recovery"), ("body", "Body"), ("activity", "Activity")] %}
+{% for key, title in sections %}
+  {% if groups[key] %}
+  <div class="section-label" {% if not loop.first %}style="margin-top:22px;"{% endif %}>{{ title }}</div>
+  <div class="list">
+    {% for c in groups[key] %}{{ ui.metric_row(c) }}{% endfor %}
+  </div>
+  {% endif %}
 {% endfor %}
+
+<div class="section-label" style="margin-top:22px;">Sleep</div>
+<a class="row list" href="/sleep" style="border-radius:18px;">
+  <span class="dot" style="background:#7c8cff;"></span>
+  <div class="main"><div class="name">Sleep detail</div><div class="desc">Hypnogram · stages · regularity</div></div>
+  <span class="chev">›</span>
+</a>
 {% endblock %}

@@ -40,7 +40,32 @@ def _fmt_num(value: float | int | None, digits: int = 0) -> str:
     return f"{value:,.{digits}f}"
 
 
+def _fmt_hm(minutes: float | int | None) -> str:
+    """Minutes → ``7h 12m`` (drops the hour when < 1h)."""
+    if minutes is None:
+        return "—"
+    minutes = int(round(minutes))
+    h, m = divmod(minutes, 60)
+    return f"{h}h {m:02d}m" if h else f"{m}m"
+
+
+def _fmt_clock(value: datetime | None) -> str:
+    """Datetime → ``11:03 PM`` (12-hour, no leading zero)."""
+    if value is None:
+        return "—"
+    return value.strftime("%I:%M %p").lstrip("0")
+
+
+def _fmt_signed(value: float | int | None, digits: int = 0) -> str:
+    if value is None:
+        return ""
+    return f"{value:+,.{digits}f}"
+
+
 templates.env.filters["fmt_dt"] = _fmt_dt
 templates.env.filters["fmt_date"] = _fmt_date
 templates.env.filters["fmt_dur"] = _fmt_dur
 templates.env.filters["fmt_num"] = _fmt_num
+templates.env.filters["fmt_hm"] = _fmt_hm
+templates.env.filters["fmt_clock"] = _fmt_clock
+templates.env.filters["fmt_signed"] = _fmt_signed

@@ -105,6 +105,12 @@ case "${1:-}" in
     shift
     exec "$ENGINE" exec -it "$CONTAINER" psql -U anduin -d anduin "$@"
     ;;
+  seed)
+    # Synthetic device data for UI dev (no Fitbit Air yet). See seed-demo-data.sql.
+    running || { echo "error: $CONTAINER is not running (run: $0 up)" >&2; exit 1; }
+    "$ENGINE" exec -i "$CONTAINER" psql -U anduin -d anduin -q < "$(dirname "$0")/seed-demo-data.sql"
+    echo "seeded synthetic device data."
+    ;;
   pull)
     running || { echo "error: $CONTAINER is not running (run: $0 up)" >&2; exit 1; }
     shift

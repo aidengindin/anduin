@@ -1,31 +1,26 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="dark">
+<html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0a0c11">
   <title>{% block title %}anduin{% endblock %}</title>
-  <link rel="stylesheet" href="/static/pico.min.css?v={{ asset_v }}">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/uplot.min.css?v={{ asset_v }}">
   <link rel="stylesheet" href="/static/app.css?v={{ asset_v }}">
-  <script src="/static/htmx.min.js?v={{ asset_v }}" defer></script>
   <script src="/static/uplot.min.js?v={{ asset_v }}" defer></script>
   <script src="/static/charts.js?v={{ asset_v }}" defer></script>
 </head>
 <body>
-  <header class="container">
-    <nav>
-      <ul>
-        <li><strong>anduin</strong></li>
-      </ul>
-      <ul>
-        <li><a href="/" {% if active=='dashboard' %}aria-current="page"{% endif %}>Summary</a></li>
-        <li><a href="/metrics" {% if active=='metrics' %}aria-current="page"{% endif %}>Metrics</a></li>
-        <li><a href="/workouts" {% if active=='workouts' %}aria-current="page"{% endif %}>Workouts</a></li>
-      </ul>
-    </nav>
-  </header>
-  <main class="container">
+  <div class="shell">
     {% block content %}{% endblock %}
-  </main>
+  </div>
+  <nav class="tabbar">
+    <a class="tab {% if active=='home' %}on{% endif %}" href="/"><span class="d"></span>HOME</a>
+    <a class="tab {% if active=='metrics' %}on{% endif %}" href="/metrics"><span class="d"></span>METRICS</a>
+    <a class="tab {% if active=='workouts' %}on{% endif %}" href="/workouts"><span class="d"></span>WORKOUTS</a>
+  </nav>
 </body>
 </html>

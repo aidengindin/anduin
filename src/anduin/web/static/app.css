@@ -1,98 +1,189 @@
-/* anduin web UI — layout on top of Pico's classless defaults. */
+/* anduin UI — dark, WHOOP-loose. Cool teal = recovery & body, warm amber =
+   strain & workouts, coral = strength. Mobile-first single column, centered on
+   desktop. Design language from the mobile mockups. */
 
 :root {
-  --anduin-chart-h: 260px;
+  --bg: #05060a;
+  --panel: #0a0c11;
+  --card: #14181f;
+  --card2: #191d26;
+  --border: rgba(255, 255, 255, 0.07);
+  --border2: rgba(255, 255, 255, 0.05);
+  --text: #eaeef6;
+  --text2: #b6bdc8;
+  --muted: #7a828f;
+  --dim: #565e6b;
+  --label: #868e9c;
+  --teal: #34d3c2;
+  --teal2: #5fe0d2;
+  --amber: #f0a63c;
+  --coral: #ef6b5e;
+  --sleep: #7c8cff;
+  --deep: #4b5fd0;
+  --blue: #5aa9ff;
+  --good: #5fe0d2;
+  --shell: 440px;
 }
 
-/* Headline tiles: responsive auto-fit grid, single column on narrow screens. */
-.tiles {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  gap: var(--pico-spacing);
-  margin-block: var(--pico-spacing);
-}
+* { box-sizing: border-box; }
 
-.tile {
+html, body {
   margin: 0;
-  padding: calc(var(--pico-spacing) * 0.75);
+  background: var(--bg);
+  color: var(--text);
+  font-family: Archivo, system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
 }
 
-.tile-label {
-  margin: 0;
-  font-size: 0.8rem;
-  color: var(--pico-muted-color);
+a { color: var(--teal); text-decoration: none; }
+a:hover { color: var(--teal2); }
+
+.num { font-family: "Space Grotesk", sans-serif; font-variant-numeric: tabular-nums; }
+h1, h2, h3 { font-family: "Space Grotesk", sans-serif; letter-spacing: -0.01em; }
+
+/* --- app shell --- */
+.shell {
+  max-width: var(--shell);
+  margin: 0 auto;
+  min-height: 100vh;
+  background: var(--panel);
+  position: relative;
+  padding: 14px 20px calc(88px + env(safe-area-inset-bottom, 0px));
+  box-shadow: 0 0 80px rgba(0, 0, 0, 0.5);
+}
+@media (min-width: 480px) {
+  .shell { border-left: 1px solid var(--border); border-right: 1px solid var(--border); }
 }
 
-.tile-value {
-  margin: 0.15rem 0 0;
-  font-size: 1.6rem;
-  font-weight: 600;
-  line-height: 1.1;
+.page-head { display: flex; justify-content: space-between; align-items: center; margin: 8px 2px 20px; }
+.page-head .sub { color: var(--muted); font-size: 13px; font-weight: 500; }
+.page-head h1 { margin: 2px 0 0; color: var(--text); font-size: 24px; font-weight: 700; }
+.avatar {
+  width: 40px; height: 40px; border-radius: 50%; flex-shrink: 0;
+  background: linear-gradient(140deg, #1e6f66, #2a3550);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex; align-items: center; justify-content: center;
+  color: #cdeee8; font-family: "Space Grotesk"; font-weight: 700; font-size: 15px;
 }
 
-.tile-value small {
-  font-size: 0.9rem;
-  font-weight: 400;
-  color: var(--pico-muted-color);
+/* --- cards --- */
+.card { background: var(--card); border: 1px solid var(--border); border-radius: 20px; padding: 16px 17px; }
+.card + .card, .grid + .card, .card + .grid, .grid + .grid { margin-top: 12px; }
+.section { margin-top: 22px; }
+.section-label {
+  display: flex; justify-content: space-between; align-items: center;
+  color: var(--label); font-size: 12px; font-weight: 700;
+  letter-spacing: 0.12em; text-transform: uppercase; margin: 0 2px 10px;
 }
+.section-label a { font-size: 12px; letter-spacing: 0; }
+.grid { display: grid; gap: 12px; }
+.grid.c2 { grid-template-columns: 1fr 1fr; }
+.grid.c3 { grid-template-columns: 1fr 1fr 1fr; }
 
-/* Chart containers get a fixed height; uPlot is sized to the parent width. */
-.chart {
-  width: 100%;
-  min-height: var(--anduin-chart-h);
-}
+.stat-label { color: var(--muted); font-size: 11.5px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
+.stat-big { color: var(--text); font-weight: 700; font-size: 28px; line-height: 1; margin-top: 6px; }
+.stat-med { color: var(--text); font-weight: 700; font-size: 22px; line-height: 1; margin-top: 4px; }
+.unit { font-size: 0.5em; color: var(--muted); font-weight: 500; }
+.delta { font-size: 12px; font-weight: 600; }
+.delta.up { color: var(--teal); }
+.delta.down { color: var(--good); }
+.delta.flat { color: var(--muted); }
+.muted { color: var(--muted); }
+.dim { color: var(--dim); }
+.row-between { display: flex; justify-content: space-between; align-items: center; }
 
-/* uPlot should fill its container width on resize. */
-.uplot,
-.u-wrap {
-  width: 100% !important;
-}
+/* status chip */
+.chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; padding: 4px 11px; border-radius: 20px; border: 1px solid transparent; }
+.chip.balanced, .chip.normal, .chip.ok { background: rgba(52,211,194,.14); border-color: rgba(52,211,194,.3); color: var(--teal); }
+.chip.low, .chip.elevated, .chip.flagged { background: rgba(239,107,94,.14); border-color: rgba(239,107,94,.32); color: var(--coral); }
+.chip.high { background: rgba(240,166,60,.14); border-color: rgba(240,166,60,.3); color: var(--amber); }
+.chip.pending { background: rgba(255,255,255,.05); border-color: var(--border); color: var(--muted); }
 
-/* uPlot legend is HTML (axes are canvas): lift its contrast for dark mode. */
-.u-legend {
-  color: var(--pico-color, #c0caf5);
-  font-size: 0.85rem;
-}
+/* --- sleep hero ring --- */
+.hero { background: radial-gradient(120% 90% at 50% 0%, rgba(52,211,194,.12), rgba(20,24,31,0) 62%), var(--card); border: 1px solid var(--border); border-radius: 26px; padding: 24px 22px 22px; text-align: center; }
+.hero-kicker { color: var(--teal); font-size: 12px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; }
+.ring { position: relative; width: 190px; height: 190px; margin: 14px auto 6px; }
+.ring svg { width: 190px; height: 190px; transform: rotate(-90deg); }
+.ring-center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.ring-big { color: var(--text); font-family: "Space Grotesk"; font-weight: 700; font-size: 40px; line-height: 1; }
+.ring-big .unit { font-size: 20px; }
+.ring-sub { color: var(--muted); font-size: 13px; margin-top: 6px; }
+.hero-row { display: flex; justify-content: center; gap: 22px; margin-top: 6px; }
+.hero-row .div { width: 1px; background: var(--border); }
+.hero-row .v { color: var(--text); font-family: "Space Grotesk"; font-weight: 600; font-size: 16px; }
+.hero-row .k { color: var(--muted); font-size: 11px; margin-top: 2px; }
 
-.u-legend .u-value {
-  color: var(--pico-color, #c0caf5);
-}
+.spark { width: 100%; height: 26px; display: block; margin-top: 8px; }
 
-.chart-empty {
-  color: var(--pico-muted-color);
-  padding: 1rem 0;
-}
+/* --- metric list rows --- */
+.list { background: var(--card); border: 1px solid var(--border); border-radius: 18px; overflow: hidden; }
+.row { display: flex; align-items: center; gap: 13px; padding: 14px 16px; border-bottom: 1px solid var(--border2); color: inherit; }
+.row:last-child { border-bottom: 0; }
+a.row:hover { background: var(--card2); }
+.dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+.row .main { flex: 1; min-width: 0; }
+.row .name { color: var(--text); font-weight: 600; font-size: 14.5px; }
+.row .desc { color: var(--muted); font-size: 11.5px; margin-top: 1px; }
+.row .rt { text-align: right; flex-shrink: 0; }
+.row .rt .v { color: var(--text); font-family: "Space Grotesk"; font-weight: 700; font-size: 16px; }
+.row .chev { color: var(--dim); font-size: 15px; flex-shrink: 0; }
+.row .spark { width: 60px; height: 24px; margin: 0; flex-shrink: 0; }
 
-/* Date-range form: wrap gracefully on mobile. */
-.range-form {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  align-items: end;
-  margin-block: var(--pico-spacing);
-}
+/* progress bar */
+.bar { height: 9px; border-radius: 6px; background: rgba(255,255,255,.07); margin-top: 10px; overflow: hidden; }
+.bar > span { display: block; height: 100%; border-radius: 6px; background: linear-gradient(90deg, #2fb8a9, #4fe3d0); }
+.bar.thin { height: 6px; }
+.bar.sleep > span { background: var(--sleep); }
 
-.range-form input,
-.range-form select {
-  width: auto;
-  margin: 0;
-}
+/* workout card */
+.wcard { display: flex; align-items: center; gap: 14px; }
+.wicon { width: 44px; height: 44px; border-radius: 13px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.wicon.cardio { background: rgba(240,166,60,.16); }
+.wicon.cardio > span { width: 16px; height: 16px; border-radius: 4px; background: var(--amber); }
+.wicon.strength { background: rgba(239,107,94,.16); }
+.wicon.strength > span { width: 16px; height: 16px; background: var(--coral); }
+.warm { background: linear-gradient(135deg, rgba(240,166,60,.1), rgba(20,24,31,0) 60%), var(--card); border-color: rgba(240,166,60,.22); }
 
-.range-form button {
-  width: auto;
-  margin: 0;
-}
+/* hypnogram */
+.hyp text { font-family: Archivo; }
 
-/* Wide tables scroll horizontally instead of overflowing on mobile. */
-.table-scroll {
-  overflow-x: auto;
-}
+/* charts (uPlot host) */
+.chart { width: 100%; min-height: 220px; }
+.chart-empty { color: var(--muted); text-align: center; padding: 40px 0; font-size: 13px; }
+.uplot, .uplot *, .u-legend { font-family: Archivo, sans-serif !important; }
 
-tr.warmup {
-  color: var(--pico-muted-color);
-}
+/* range toggle */
+.toggle { display: flex; gap: 6px; background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 4px; margin: 16px 0 14px; }
+.toggle a { flex: 1; text-align: center; padding: 8px 0; border-radius: 10px; color: var(--muted); font-family: "Space Grotesk"; font-weight: 600; font-size: 13px; }
+.toggle a.on { background: #243040; color: #e9fbf7; }
 
-@media (max-width: 480px) {
-  .tile-value { font-size: 1.3rem; }
-  :root { --anduin-chart-h: 220px; }
+/* detail top bar */
+.topbar { display: flex; align-items: center; justify-content: space-between; padding: 4px 2px 14px; }
+.topbar .back { color: var(--teal); font-size: 15px; font-weight: 600; }
+.topbar .title { color: var(--text); font-family: "Space Grotesk"; font-weight: 700; font-size: 16px; }
+.topbar .spacer { width: 60px; text-align: right; }
+
+.note { background: rgba(52,211,194,.06); border: 1px solid rgba(52,211,194,.16); border-radius: 16px; padding: 14px 16px; margin-top: 16px; color: #9fb4b0; font-size: 12.5px; line-height: 1.5; }
+.empty-state { color: var(--muted); text-align: center; padding: 24px 10px; font-size: 13px; line-height: 1.5; }
+
+/* --- bottom tab bar --- */
+.tabbar {
+  position: fixed; bottom: 0; left: 50%; transform: translateX(-50%);
+  width: 100%; max-width: var(--shell);
+  display: flex; justify-content: space-around; align-items: center;
+  padding: 12px 14px calc(18px + env(safe-area-inset-bottom, 0px));
+  background: rgba(10, 12, 17, 0.92); backdrop-filter: blur(14px);
+  border-top: 1px solid var(--border); z-index: 20;
 }
+.tab { display: flex; flex-direction: column; align-items: center; gap: 6px; color: var(--dim); font-weight: 700; font-size: 10px; letter-spacing: 0.08em; }
+.tab .d { width: 7px; height: 7px; border-radius: 50%; background: var(--dim); }
+.tab.on { color: var(--teal); }
+.tab.on .d { background: var(--teal); box-shadow: 0 0 8px rgba(52,211,194,.6); }
+
+/* workout detail exercises */
+.ex { background: var(--card); border: 1px solid var(--border); border-radius: 18px; overflow: hidden; margin-bottom: 11px; }
+.ex-head { display: flex; justify-content: space-between; align-items: center; padding: 13px 16px; border-bottom: 1px solid var(--border2); }
+.ex-head .en { color: var(--text); font-weight: 600; font-size: 14.5px; }
+.set { display: flex; align-items: center; gap: 10px; padding: 7px 16px; color: var(--text2); font-size: 12.5px; border-top: 1px solid rgba(255,255,255,.04); }
+.set .si { width: 22px; color: var(--dim); }
+.set .sv { flex: 1; }

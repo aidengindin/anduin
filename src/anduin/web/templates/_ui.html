@@ -1,0 +1,68 @@
+{# Shared UI macros. #}
+
+{% macro spark(points, color) %}
+{% if points %}<svg class="spark" viewBox="0 0 60 24" preserveAspectRatio="none"><polyline points="{{ points }}" fill="none" stroke="{{ color }}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>{% endif %}
+{% endmacro %}
+
+{% macro deltaline(c) %}
+{% if c.delta is not none %}<div class="delta {{ c.dir }} num" style="margin-top:4px;">{{ '↓' if c.delta < 0 else '↑' }} {{ c.delta|abs|fmt_num(c.digits) }}{% if c.unit %} {{ c.unit }}{% endif %}</div>{% endif %}
+{% endmacro %}
+
+{# recovery pill: big value + sparkline + optional status chip #}
+{% macro pill(c, label, status) %}
+<a class="card" href="{{ '/metrics/' + c.key if c else '#' }}" style="display:block;color:inherit;">
+  <div class="row-between">
+    <span class="stat-label">{{ label }}</span>
+    {% if status %}<span class="chip {{ status }}" style="padding:2px 9px;font-size:10.5px;">{{ status }}</span>{% endif %}
+  </div>
+  {% if c %}
+  <div class="stat-big num">{{ c.value|fmt_num(c.digits) }}{% if c.unit %}<span class="unit"> {{ c.unit }}</span>{% endif %}</div>
+  {{ spark(c.spark, c.color) }}
+  {% else %}
+  <div class="stat-big num dim">—</div>
+  <div class="muted" style="font-size:11px;margin-top:8px;">No data yet</div>
+  {% endif %}
+</a>
+{% endmacro %}
+
+{# body tile: value + delta #}
+{% macro tile(c, label) %}
+<a class="card" href="{{ '/metrics/' + c.key if c else '#' }}" style="display:block;color:inherit;">
+  <div class="stat-label">{{ label }}</div>
+  {% if c %}
+  <div class="stat-big num">{{ c.value|fmt_num(c.digits) }}{% if c.unit %}<span class="unit"> {{ c.unit }}</span>{% endif %}</div>
+  {{ deltaline(c) }}
+  {% else %}
+  <div class="stat-big num dim">—</div>
+  <div class="muted" style="font-size:11px;margin-top:8px;">No data yet</div>
+  {% endif %}
+</a>
+{% endmacro %}
+
+{# metric row for the Metrics index / feed #}
+{% macro metric_row(c) %}
+<a class="row" href="{{ '/metrics/' + c.key }}">
+  <span class="dot" style="background:{{ c.color }};"></span>
+  <div class="main"><div class="name">{{ c.label }}</div><div class="desc">{{ c.desc }}</div></div>
+  {{ spark(c.spark, c.color) }}
+  <div class="rt">
+    {% if c.value is not none %}
+      <div class="v">{{ c.value|fmt_num(c.digits) }}{% if c.unit %}<span class="unit">{{ c.unit }}</span>{% endif %}</div>
+      {% if c.delta is not none %}<div class="delta {{ c.dir }} num" style="font-size:11px;">{{ '↓' if c.delta < 0 else '↑' }} {{ c.delta|abs|fmt_num(c.digits) }}</div>{% endif %}
+    {% else %}<div class="v dim">—</div>{% endif %}
+  </div>
+  <span class="chev">›</span>
+</a>
+{% endmacro %}
+
+{% macro workout_row(w) %}
+<a class="row" href="/workouts/{{ w.source }}/{{ w.activity_uid }}">
+  <div class="wicon {{ 'strength' if w.is_strength else 'cardio' }}" style="width:38px;height:38px;border-radius:11px;"><span style="width:14px;height:14px;"></span></div>
+  <div class="main">
+    <div class="name">{{ w.sport or 'Workout' }}{% if w.program %} · {{ w.program }}{% endif %}</div>
+    <div class="desc">{{ w.started_at|fmt_date }} · {{ w.duration_s|fmt_dur }}{% if w.calories %} · {{ w.calories|fmt_num }} cal{% endif %}</div>
+  </div>
+  {% if w.training_load %}<span class="num" style="color:{{ '#ef6b5e' if w.is_strength else '#f0a63c' }};font-size:13px;font-weight:600;">{{ w.training_load|round|int }} <span class="dim" style="font-size:10px;">load</span></span>{% endif %}
+  <span class="chev">›</span>
+</a>
+{% endmacro %}
