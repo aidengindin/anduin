@@ -121,20 +121,22 @@ def upsert_daily_metrics(conn: Connection, rows: Iterable[dict]) -> int:
 _SLEEP_HEADER_SQL = """
 INSERT INTO raw.sleep_sessions
     (source, session_uid, device, recording_method, started_at, ended_at,
-     is_main_sleep, sleep_type, minutes_asleep, minutes_awake,
+     tz_offset_minutes, is_main_sleep, sleep_type, minutes_asleep, minutes_awake,
      minutes_in_sleep_period, minutes_to_fall_asleep, minutes_after_wakeup,
      efficiency, summary, raw, natural_key)
 VALUES
     (%(source)s, %(session_uid)s, %(device)s, %(recording_method)s,
-     %(started_at)s, %(ended_at)s, %(is_main_sleep)s, %(sleep_type)s,
-     %(minutes_asleep)s, %(minutes_awake)s, %(minutes_in_sleep_period)s,
-     %(minutes_to_fall_asleep)s, %(minutes_after_wakeup)s, %(efficiency)s,
+     %(started_at)s, %(ended_at)s, %(tz_offset_minutes)s, %(is_main_sleep)s,
+     %(sleep_type)s, %(minutes_asleep)s, %(minutes_awake)s,
+     %(minutes_in_sleep_period)s, %(minutes_to_fall_asleep)s,
+     %(minutes_after_wakeup)s, %(efficiency)s,
      %(summary)s, %(raw)s, %(natural_key)s)
 ON CONFLICT (source, session_uid) DO UPDATE SET
     device                  = EXCLUDED.device,
     recording_method        = EXCLUDED.recording_method,
     started_at              = EXCLUDED.started_at,
     ended_at                = EXCLUDED.ended_at,
+    tz_offset_minutes       = EXCLUDED.tz_offset_minutes,
     is_main_sleep           = EXCLUDED.is_main_sleep,
     sleep_type              = EXCLUDED.sleep_type,
     minutes_asleep          = EXCLUDED.minutes_asleep,

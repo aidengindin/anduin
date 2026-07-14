@@ -69,6 +69,19 @@ def _parse_ts(s: str) -> datetime:
     return dt
 
 
+def _tz_offset_minutes(s: str) -> int | None:
+    """Local UTC offset (minutes) embedded in an RFC-3339 timestamp, or None.
+
+    A v4 sleep interval time may carry the wearer's local offset (e.g.
+    ...T23:10:00-04:00), which sleep-regularity (SRI) needs to align clock time
+    across nights. A trailing 'Z' or a naive string means the local offset is
+    unknown -> None, and the derived views fall back to UTC (documented there)."""
+    if s.endswith(("Z", "z")):
+        return None
+    off = datetime.fromisoformat(s).utcoffset()
+    return None if off is None else int(off.total_seconds() // 60)
+
+
 def _coerce_int(v) -> int | None:
     # int64 proto fields arrive as JSON strings ("420"); tolerate None/blank.
     if v is None or v == "":
@@ -157,6 +170,7 @@ def _emit_sleep(dp: dict) -> tuple[dict, list[dict]]:
         "recording_method": "device",
         "started_at": started_at,
         "ended_at": ended_at,
+        "tz_offset_minutes": _tz_offset_minutes(interval["startTime"]),
         # v4 does not always flag a main sleep; tolerate absence.
         "is_main_sleep": s.get("isMainSleep"),
         "sleep_type": s.get("type"),

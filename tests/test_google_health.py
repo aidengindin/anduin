@@ -71,6 +71,16 @@ def test_emit_sleep_session_header():
     assert session["efficiency"] == 90.0
     assert session["natural_key"] == "sleep|users/me/dataTypes/sleep/dataPoints/NIGHT1"
     assert session["raw"]["sleep"]["type"] == "STAGES"
+    # startTime is 'Z' (UTC) here, so the wearer's local offset is unknown.
+    assert session["tz_offset_minutes"] is None
+
+
+def test_emit_sleep_captures_local_tz_offset():
+    dp = _sleep_dp()
+    # A local-offset startTime (e.g. US Eastern DST) is captured in minutes.
+    dp["sleep"]["interval"]["startTime"] = "2026-03-15T23:10:00-04:00"
+    session, _ = _emit_sleep(dp)
+    assert session["tz_offset_minutes"] == -240
 
 
 def test_emit_sleep_stage_segments():
