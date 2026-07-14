@@ -18,6 +18,24 @@ anduin auth <source>          # interactive OAuth seed (google-health, withings)
 anduin db migrate
 ```
 
+## Local dev database
+
+nixpkgs' postgres has no TimescaleDB extension, so local dev runs the official
+image in a container (podman or docker). `scripts/dev-db.sh` wraps the lifecycle:
+
+```
+scripts/dev-db.sh up          # start container + run migrations
+scripts/dev-db.sh pull withings -- --since 2026-04-01 --until 2026-07-14
+scripts/dev-db.sh psql        # psql shell into the container
+scripts/dev-db.sh reset       # fresh database
+scripts/dev-db.sh down        # stop + remove (data is lost)
+```
+
+Namespaced so it can't touch a real deployment: container `anduin-tsdb`, role/db
+`anduin`, `127.0.0.1:5432`. `--dry-run` extracts need no database at all. Secrets
+(client IDs/keys, OAuth tokens) come from `.env` + `ANDUIN_STATE_DIR`; see
+`config.py`.
+
 ## Schema
 
 Two grains: continuous samples (`raw.samples`) and workouts. A workout is one
