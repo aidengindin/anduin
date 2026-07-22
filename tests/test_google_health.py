@@ -83,6 +83,22 @@ def test_emit_sleep_captures_local_tz_offset():
     assert session["tz_offset_minutes"] == -240
 
 
+def test_emit_sleep_captures_offset_from_start_utc_offset_field():
+    # Real Fitbit-via-Google v4 payloads keep startTime as 'Z' and put the local
+    # offset in a sibling ``startUtcOffset`` field ("-14400s" == -240 min).
+    dp = _sleep_dp()
+    dp["sleep"]["interval"]["startUtcOffset"] = "-14400s"
+    session, _ = _emit_sleep(dp)
+    assert session["tz_offset_minutes"] == -240
+
+
+def test_emit_sleep_offset_field_handles_utc_zero():
+    dp = _sleep_dp()
+    dp["sleep"]["interval"]["startUtcOffset"] = "0s"
+    session, _ = _emit_sleep(dp)
+    assert session["tz_offset_minutes"] == 0
+
+
 def test_emit_sleep_stage_segments():
     _session, stages = _emit_sleep(_sleep_dp())
     assert len(stages) == 2

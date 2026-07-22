@@ -31,9 +31,9 @@
   <div class="hero-row">
     <div><div class="v num">{{ sleep.efficiency_pct | round | int if sleep.efficiency_pct is not none else '—' }}%</div><div class="k">Efficiency</div></div>
     <div class="div"></div>
-    <div><div class="v num">{{ sleep.started_at | fmt_clock }}</div><div class="k">Bedtime</div></div>
+    <div><div class="v num">{{ (sleep.started_local or sleep.started_at) | fmt_clock }}</div><div class="k">Bedtime</div></div>
     <div class="div"></div>
-    <div><div class="v num">{{ sleep.ended_at | fmt_clock }}</div><div class="k">Woke</div></div>
+    <div><div class="v num">{{ (sleep.ended_local or sleep.ended_at) | fmt_clock }}</div><div class="k">Woke</div></div>
   </div>
 </div>
 </a>

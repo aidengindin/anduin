@@ -47,3 +47,25 @@ that reconciliation now lives in the `canonical.heart_rate` union itself.
 - intervals stream type for speed is **`velocity_smooth`** (`speed` 422s).
 - Per-workout energy: **calories** is the primary metric; `workout_load` surfaces
   **TSS (training load)**, a separate thing — don't conflate them.
+
+## Fitbit Air / Google Health v4 quirks (learned from real data)
+
+- **Daily HRV/SpO2 rollups are empty for the Air.** Google's `daily-heart-rate-
+  variability` and `daily-oxygen-saturation` endpoints return nothing; only the
+  per-*sample* streams are populated (both measured only during sleep). So
+  `canonical.hrv_daily` and `canonical.spo2_daily` are derived by averaging the
+  sample stream inside each `canonical.sleep` window, keyed to the local **wake**
+  date (see migrations 0018/0019). `derived.hrv_status` / `derived.spo2_status`
+  read those nightly views, not `raw.daily_metrics`. `resting_heart_rate` and
+  `respiratory_rate` daily rollups *are* populated, so those stay as-is.
+- **SpO2 has a `50.0` sentinel** for dropped/invalid pulse-ox reads. Filter
+  `value >= 70` before aggregating or it corrupts the avg/min and false-trips the
+  desaturation flag.
+- **Local timezone is a sibling field, not in the timestamp.** Sleep/steps
+  intervals keep `startTime` as a `Z` UTC stamp and carry the wearer's offset in
+  `startUtcOffset` ("-14400s") plus a `civilStartTime` local date. The extractor
+  reads `startUtcOffset` for sleep `tz_offset_minutes`; `canonical.steps_daily`
+  buckets by the civil date. UI shows local via `sleep_efficiency.started_local`/
+  `ended_local`.
+- **RHR: the API value ≠ the app value.** Google's API returns e.g. 52 while the
+  Fitbit app shows 53 (different aggregation). We store the API value faithfully.

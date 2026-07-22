@@ -42,9 +42,8 @@ METRICS: dict[str, dict[str, Any]] = {
     },
     "spo2": {
         "label": "SpO₂", "desc": "Overnight blood oxygen", "unit": "%", "group": "recovery",
-        "color": "#4bc8c2", "view": "canonical.daily_metrics",
-        "where": "metric = 'spo2_daily_avg'",
-        "date_col": "local_date", "value_col": "value", "digits": 0, "better": "high",
+        "color": "#4bc8c2", "view": "canonical.spo2_daily",
+        "date_col": "local_date", "value_col": "spo2_avg", "digits": 0, "better": "high",
     },
     "skin_temp": {
         "label": "Skin temperature", "desc": "Nightly", "unit": "°C", "group": "recovery",
@@ -71,8 +70,8 @@ METRICS: dict[str, dict[str, Any]] = {
     },
     "steps": {
         "label": "Steps", "desc": "Daily total", "unit": "", "group": "activity",
-        "color": "#3fd6a0", "view": "canonical.steps",
-        "date_col": "valid_from", "value_col": "value", "digits": 0, "better": "high",
+        "color": "#3fd6a0", "view": "canonical.steps_daily",
+        "date_col": "local_date", "value_col": "value", "digits": 0, "better": "high",
     },
     "form": {
         "label": "Form (TSB)", "desc": "Fitness − fatigue", "unit": "", "group": "activity",
@@ -242,8 +241,8 @@ def home(conn: Connection) -> dict[str, Any]:
     # Sleep hero: latest night + 14d duration spark.
     with conn.cursor() as cur:
         cur.execute("""
-            SELECT e.started_at, e.ended_at, e.minutes_asleep, e.efficiency_pct,
-                   r.sri
+            SELECT e.started_at, e.ended_at, e.started_local, e.ended_local,
+                   e.minutes_asleep, e.efficiency_pct, r.sri
             FROM derived.sleep_efficiency e
             LEFT JOIN derived.sleep_regularity r
                    ON r.as_of_date = (e.started_at AT TIME ZONE 'UTC')::date
@@ -419,6 +418,7 @@ def sleep_detail(conn: Connection) -> dict[str, Any] | None:
         cur.execute("""
             SELECT s.session_uid, s.source, s.started_at, s.ended_at, s.minutes_asleep,
                    s.minutes_awake, s.efficiency,
+                   e.started_local, e.ended_local,
                    e.efficiency_pct, e.time_in_bed_min, e.efficiency_pct_avg_7d,
                    c.total_min, c.deep_min, c.rem_min, c.light_min, c.awake_min,
                    c.pct_deep, c.pct_rem, c.pct_light, c.pct_awake,

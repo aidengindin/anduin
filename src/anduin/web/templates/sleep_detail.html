@@ -17,16 +17,16 @@
 {# hero #}
 <div style="display:flex;align-items:flex-end;justify-content:space-between;padding:6px 2px 4px;">
   <div>
-    <div class="stat-label">Time asleep · {{ n.started_at|fmt_date }}</div>
+    <div class="stat-label">Time asleep · {{ (n.started_local or n.started_at)|fmt_date }}</div>
     <div class="num" style="color:var(--text);font-weight:700;font-size:44px;line-height:1;margin-top:6px;">{{ n.minutes_asleep // 60 }}<span class="unit" style="font-size:22px;">h</span> {{ '%02d' % (n.minutes_asleep % 60) }}<span class="unit" style="font-size:22px;">m</span></div>
   </div>
 </div>
 
 {# timing #}
 <div class="card" style="display:flex;align-items:center;gap:12px;margin-top:14px;">
-  <div style="text-align:center;flex:1;"><div class="muted" style="font-size:11px;">Bedtime</div><div class="num" style="color:var(--text);font-weight:600;font-size:16px;margin-top:2px;">{{ n.started_at|fmt_clock }}</div></div>
+  <div style="text-align:center;flex:1;"><div class="muted" style="font-size:11px;">Bedtime</div><div class="num" style="color:var(--text);font-weight:600;font-size:16px;margin-top:2px;">{{ (n.started_local or n.started_at)|fmt_clock }}</div></div>
   <div style="flex:1.4;height:3px;border-radius:2px;background:linear-gradient(90deg,#4056c8,#7c8cff,#34d3c2);"></div>
-  <div style="text-align:center;flex:1;"><div class="muted" style="font-size:11px;">Wake</div><div class="num" style="color:var(--text);font-weight:600;font-size:16px;margin-top:2px;">{{ n.ended_at|fmt_clock }}</div></div>
+  <div style="text-align:center;flex:1;"><div class="muted" style="font-size:11px;">Wake</div><div class="num" style="color:var(--text);font-weight:600;font-size:16px;margin-top:2px;">{{ (n.ended_local or n.ended_at)|fmt_clock }}</div></div>
 </div>
 
 {# hypnogram #}

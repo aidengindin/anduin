@@ -82,6 +82,21 @@ def _tz_offset_minutes(s: str) -> int | None:
     return None if off is None else int(off.total_seconds() // 60)
 
 
+def _utc_offset_seconds_field(s: str | None) -> int | None:
+    """Parse a v4 ``*UtcOffset`` field ("-14400s") into whole minutes, or None.
+
+    Fitbit-via-Google sleep intervals keep ``startTime`` as a 'Z' UTC stamp and
+    carry the wearer's local offset in a sibling ``startUtcOffset`` field encoded
+    as a signed seconds string with a trailing 's'."""
+    if not s:
+        return None
+    s = s.strip().rstrip("sS")
+    try:
+        return int(s) // 60
+    except ValueError:
+        return None
+
+
 def _coerce_int(v) -> int | None:
     # int64 proto fields arrive as JSON strings ("420"); tolerate None/blank.
     if v is None or v == "":
@@ -163,6 +178,12 @@ def _emit_sleep(dp: dict) -> tuple[dict, list[dict]]:
     session_uid = dp.get("name") or f"sleep|{started_at.isoformat()}"
     summary = s.get("summary") or {}
 
+    # Prefer the explicit ``startUtcOffset`` field (real Fitbit payloads); fall
+    # back to an offset embedded in the startTime string (older/other sources).
+    tz_off = _utc_offset_seconds_field(interval.get("startUtcOffset"))
+    if tz_off is None:
+        tz_off = _tz_offset_minutes(interval["startTime"])
+
     session = {
         "source": "google_health",
         "session_uid": session_uid,
@@ -170,7 +191,7 @@ def _emit_sleep(dp: dict) -> tuple[dict, list[dict]]:
         "recording_method": "device",
         "started_at": started_at,
         "ended_at": ended_at,
-        "tz_offset_minutes": _tz_offset_minutes(interval["startTime"]),
+        "tz_offset_minutes": tz_off,
         # v4 does not always flag a main sleep; tolerate absence.
         "is_main_sleep": s.get("isMainSleep"),
         "sleep_type": s.get("type"),
