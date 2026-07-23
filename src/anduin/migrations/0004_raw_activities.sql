@@ -11,6 +11,7 @@
 -- activities with a non-NULL `ended_at` (see 0007).
 
 CREATE TABLE IF NOT EXISTS raw.activities (
+    user_id           int          NOT NULL REFERENCES identity.users(id),
     source            text         NOT NULL,
     activity_uid      text         NOT NULL,
     device            text,
@@ -23,7 +24,7 @@ CREATE TABLE IF NOT EXISTS raw.activities (
     raw               jsonb        NOT NULL,
     natural_key       text         NOT NULL,
     ingested_at       timestamptz  NOT NULL DEFAULT now(),
-    PRIMARY KEY (source, activity_uid),
+    PRIMARY KEY (user_id, source, activity_uid),
     CONSTRAINT activities_valid_range CHECK (ended_at IS NULL OR ended_at >= started_at)
 );
 
@@ -36,6 +37,7 @@ CREATE TRIGGER activities_restatement
     FOR EACH ROW EXECUTE FUNCTION raw.log_restatement();
 
 CREATE TABLE IF NOT EXISTS raw.activity_streams (
+    user_id       int              NOT NULL REFERENCES identity.users(id),
     source        text             NOT NULL,
     activity_uid  text             NOT NULL,
     t             timestamptz      NOT NULL,
@@ -52,14 +54,14 @@ SELECT create_hypertable(
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS activity_streams_uk
-    ON raw.activity_streams (source, activity_uid, metric, t);
+    ON raw.activity_streams (user_id, source, activity_uid, metric, t);
 
 CREATE INDEX IF NOT EXISTS activity_streams_metric_time
     ON raw.activity_streams (metric, t DESC);
 
 ALTER TABLE raw.activity_streams SET (
     timescaledb.compress,
-    timescaledb.compress_segmentby = 'source, activity_uid, metric',
+    timescaledb.compress_segmentby = 'user_id, source, activity_uid, metric',
     timescaledb.compress_orderby = 't DESC'
 );
 

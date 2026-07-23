@@ -32,6 +32,26 @@ in the same way. So `canonical.heart_rate` is a single view that unions the
 continuous (Air) sample stream with the per-workout HR stream from
 `raw.activity_streams`, with the workout stream owning its own time window.
 
+### user_id on every row — multi-user without a future migration
+
+anduin is single-user today, but every measurement table carries a
+`user_id int NOT NULL REFERENCES identity.users(id)` **folded in as the leading
+column of its PK / unique index** (and into each compressed hypertable's
+`compress_segmentby` and each continuous aggregate's `GROUP BY`). There is one
+seeded user (`identity.users` id = 1); the write path stamps the configured owner
+id (`FileConfig.user_id`, default 1) on every row — never a DB-level default,
+which would silently mislabel rows once a second user exists.
+
+The point is that the expensive-to-change parts of the schema (hypertable
+columns/segmentby, unique indexes, CAGG grouping) are already user-partitioned,
+so adding multi-user support after deployment is a **read-path change only** — no
+data migration, no re-keying. That remaining work: propagate `user_id` through
+the `canonical.*` / `derived.*` views and add `WHERE user_id = :current_user` in
+`web/queries.py`, plus a way to resolve the current user. All those are
+`CREATE OR REPLACE VIEW` / query edits — cheap and reversible. Folding `user_id`
+into the natural keys also makes cross-user collisions on an upstream
+`natural_key` / `activity_uid` / `session_uid` structurally impossible.
+
 ## Canonical precedence
 
 Inside a recorded workout the activity-stream source (intervals) wins; outside,

@@ -8,6 +8,7 @@
 -- by the API, so it is intentionally absent.
 
 CREATE TABLE IF NOT EXISTS raw.sleep_sessions (
+    user_id                 int         NOT NULL REFERENCES identity.users(id),
     source                  text        NOT NULL,
     session_uid             text        NOT NULL,   -- v4 dataPoint name / logId
     device                  text,
@@ -26,7 +27,7 @@ CREATE TABLE IF NOT EXISTS raw.sleep_sessions (
     raw                     jsonb       NOT NULL,
     natural_key             text        NOT NULL,   -- for the restatement trigger
     ingested_at             timestamptz NOT NULL DEFAULT now(),
-    PRIMARY KEY (source, session_uid),
+    PRIMARY KEY (user_id, source, session_uid),
     CONSTRAINT sleep_sessions_valid_range CHECK (ended_at >= started_at)
 );
 
@@ -42,6 +43,7 @@ CREATE TRIGGER sleep_sessions_restatement
 -- Stage segments. One row = one contiguous stage span within a session. Modelled
 -- like raw.activity_streams: a hypertable on the interval start, compressed.
 CREATE TABLE IF NOT EXISTS raw.sleep_stages (
+    user_id      int         NOT NULL REFERENCES identity.users(id),
     source       text        NOT NULL,
     session_uid  text        NOT NULL,
     stage        text        NOT NULL,   -- DEEP | LIGHT | REM | AWAKE
@@ -59,11 +61,11 @@ SELECT create_hypertable(
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS sleep_stages_uk
-    ON raw.sleep_stages (source, session_uid, started_at);
+    ON raw.sleep_stages (user_id, source, session_uid, started_at);
 
 ALTER TABLE raw.sleep_stages SET (
     timescaledb.compress,
-    timescaledb.compress_segmentby = 'source, session_uid',
+    timescaledb.compress_segmentby = 'user_id, source, session_uid',
     timescaledb.compress_orderby = 'started_at DESC'
 );
 

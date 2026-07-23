@@ -66,6 +66,11 @@ class LiftosaurConfig(BaseModel):
 
 class FileConfig(BaseModel):
     state_dir: Path = Path("/var/lib/anduin/state")
+    # Owner of every ingested row. anduin is single-user today; the extractors
+    # stamp this id on all raw rows (it's folded into each table's natural key),
+    # so multi-user support later is a read-path change only. Defaults to the
+    # single seeded user (identity.users id = 1).
+    user_id: int = 1
     google_health: GoogleHealthConfig = GoogleHealthConfig()
     withings: WithingsConfig = WithingsConfig()
     intervals: IntervalsConfig = IntervalsConfig()

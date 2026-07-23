@@ -66,6 +66,7 @@ def extract(
     dry_run: bool = False,
 ) -> SourceResult:
     result = SourceResult(source="liftosaur")
+    user_id = app.file.user_id
     if not app.secrets.liftosaur_api_key:
         result.error("liftosaur: missing LIFTOSAUR_API_KEY")
         return result
@@ -103,7 +104,7 @@ def extract(
                 )
                 continue
             try:
-                upsert_strength(conn, activity, rows["exercises"], rows["sets"])
+                upsert_strength(conn, user_id, activity, rows["exercises"], rows["sets"])
                 n_workouts += 1
                 n_exercises += len(rows["exercises"])
                 n_sets += len(rows["sets"])

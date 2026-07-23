@@ -415,6 +415,7 @@ def extract(
     dry_run: bool = False,
 ) -> SourceResult:
     result = SourceResult(source="google_health")
+    user_id = app.file.user_id
     if not app.secrets.google_health_client_id or not app.secrets.google_health_client_secret:
         result.error("google_health: missing GOOGLE_HEALTH_CLIENT_ID/SECRET")
         return result
@@ -446,7 +447,7 @@ def extract(
             if dry_run:
                 dry_run_total += 1 + len(stages)
                 continue
-            upsert_sleep(conn, session, stages)
+            upsert_sleep(conn, user_id, session, stages)
         if not dry_run and sessions:
             result.add("raw.sleep_sessions", sessions)
         logger.info("google_health %s: OK, %d session(s)", data_type, sessions)
@@ -477,7 +478,7 @@ def extract(
             if dry_run:
                 dry_run_total += len(rows)
                 continue
-            n = upsert_samples(conn, rows)
+            n = upsert_samples(conn, user_id, rows)
             result.add("raw.samples", n)
         except Exception as e:  # noqa: BLE001
             result.error(f"{data_type} {since}..{until}: {e!r}")
@@ -502,7 +503,7 @@ def extract(
             if dry_run:
                 dry_run_total += len(rows)
                 continue
-            n = upsert_daily_metrics(conn, rows)
+            n = upsert_daily_metrics(conn, user_id, rows)
             result.add("raw.daily_metrics", n)
         except Exception as e:  # noqa: BLE001
             result.error(f"{data_type} {since}..{until}: {e!r}")

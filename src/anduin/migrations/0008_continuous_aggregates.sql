@@ -7,6 +7,7 @@ CREATE MATERIALIZED VIEW IF NOT EXISTS canonical.samples_1m
 WITH (timescaledb.continuous) AS
 SELECT
     time_bucket('1 minute', valid_from) AS bucket,
+    user_id,
     source,
     metric,
     avg(value)  AS avg_value,
@@ -14,7 +15,7 @@ SELECT
     max(value)  AS max_value,
     count(*)    AS n
 FROM raw.samples
-GROUP BY bucket, source, metric
+GROUP BY bucket, user_id, source, metric
 WITH NO DATA;
 
 SELECT add_continuous_aggregate_policy(
@@ -29,6 +30,7 @@ CREATE MATERIALIZED VIEW IF NOT EXISTS canonical.samples_1h
 WITH (timescaledb.continuous) AS
 SELECT
     time_bucket('1 hour', valid_from) AS bucket,
+    user_id,
     source,
     metric,
     avg(value) AS avg_value,
@@ -37,7 +39,7 @@ SELECT
     sum(value) AS sum_value,
     count(*)   AS n
 FROM raw.samples
-GROUP BY bucket, source, metric
+GROUP BY bucket, user_id, source, metric
 WITH NO DATA;
 
 SELECT add_continuous_aggregate_policy(
@@ -52,6 +54,7 @@ CREATE MATERIALIZED VIEW IF NOT EXISTS canonical.samples_1d
 WITH (timescaledb.continuous) AS
 SELECT
     time_bucket('1 day', valid_from) AS bucket,
+    user_id,
     source,
     metric,
     avg(value) AS avg_value,
@@ -60,7 +63,7 @@ SELECT
     sum(value) AS sum_value,
     count(*)   AS n
 FROM raw.samples
-GROUP BY bucket, source, metric
+GROUP BY bucket, user_id, source, metric
 WITH NO DATA;
 
 SELECT add_continuous_aggregate_policy(

@@ -19,12 +19,12 @@ BEGIN
 END
 $$;
 
-GRANT USAGE ON SCHEMA raw, canonical TO anduin_ro;
+GRANT USAGE ON SCHEMA raw, canonical, identity TO anduin_ro;
 
 -- ON ALL TABLES covers plain tables, views, and materialized views (the
 -- continuous aggregates); reads through views run with view-owner privileges,
 -- so SELECT on the canonical views is all a consumer needs.
-GRANT SELECT ON ALL TABLES IN SCHEMA raw, canonical TO anduin_ro;
+GRANT SELECT ON ALL TABLES IN SCHEMA raw, canonical, identity TO anduin_ro;
 
 -- Future objects: default privileges are recorded per (grantor, schema) and
 -- migrations always run as the owning `anduin` role, so tables added by later
@@ -32,3 +32,4 @@ GRANT SELECT ON ALL TABLES IN SCHEMA raw, canonical TO anduin_ro;
 -- schema must repeat this pair for that schema.
 ALTER DEFAULT PRIVILEGES IN SCHEMA raw GRANT SELECT ON TABLES TO anduin_ro;
 ALTER DEFAULT PRIVILEGES IN SCHEMA canonical GRANT SELECT ON TABLES TO anduin_ro;
+ALTER DEFAULT PRIVILEGES IN SCHEMA identity GRANT SELECT ON TABLES TO anduin_ro;

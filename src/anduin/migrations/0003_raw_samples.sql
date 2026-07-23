@@ -4,6 +4,7 @@
 -- captures payload diffs.
 
 CREATE TABLE IF NOT EXISTS raw.samples (
+    user_id           int           NOT NULL REFERENCES identity.users(id),
     source            text          NOT NULL,
     device            text,
     recording_method  text,
@@ -25,15 +26,17 @@ SELECT create_hypertable(
     if_not_exists => TRUE
 );
 
--- Idempotency: re-pulls land on the same row.
+-- Idempotency: re-pulls land on the same row. user_id leads the key so two
+-- users can share an upstream natural_key without colliding.
 CREATE UNIQUE INDEX IF NOT EXISTS samples_natural_uk
-    ON raw.samples (source, metric, natural_key, valid_from);
+    ON raw.samples (user_id, source, metric, natural_key, valid_from);
 
 CREATE INDEX IF NOT EXISTS samples_metric_time
     ON raw.samples (metric, valid_from DESC);
 
 CREATE TABLE IF NOT EXISTS raw.restatements (
     id          bigserial PRIMARY KEY,
+    user_id     int,
     table_name  text        NOT NULL,
     natural_key text        NOT NULL,
     old_raw     jsonb       NOT NULL,
@@ -48,8 +51,8 @@ CREATE OR REPLACE FUNCTION raw.log_restatement() RETURNS trigger
 LANGUAGE plpgsql AS $$
 BEGIN
     IF NEW.raw IS DISTINCT FROM OLD.raw THEN
-        INSERT INTO raw.restatements (table_name, natural_key, old_raw, new_raw)
-        VALUES (TG_TABLE_SCHEMA || '.' || TG_TABLE_NAME, NEW.natural_key, OLD.raw, NEW.raw);
+        INSERT INTO raw.restatements (user_id, table_name, natural_key, old_raw, new_raw)
+        VALUES (NEW.user_id, TG_TABLE_SCHEMA || '.' || TG_TABLE_NAME, NEW.natural_key, OLD.raw, NEW.raw);
     END IF;
     RETURN NEW;
 END;
@@ -63,7 +66,7 @@ CREATE TRIGGER samples_restatement
 -- Compression for older chunks. ~0.6 GB/yr expected.
 ALTER TABLE raw.samples SET (
     timescaledb.compress,
-    timescaledb.compress_segmentby = 'source, metric',
+    timescaledb.compress_segmentby = 'user_id, source, metric',
     timescaledb.compress_orderby = 'valid_from DESC'
 );
 
@@ -80,6 +83,7 @@ SELECT add_compression_policy('raw.samples', INTERVAL '14 days', if_not_exists =
 -- No hypertable: one row per metric per day is tiny (same reasoning as
 -- raw.sleep_sessions), and a plain PK gives idempotent re-pulls directly.
 CREATE TABLE IF NOT EXISTS raw.daily_metrics (
+    user_id           int              NOT NULL REFERENCES identity.users(id),
     source            text             NOT NULL,
     device            text,
     recording_method  text,
@@ -91,7 +95,7 @@ CREATE TABLE IF NOT EXISTS raw.daily_metrics (
     raw               jsonb            NOT NULL,
     natural_key       text             NOT NULL,
     ingested_at       timestamptz      NOT NULL DEFAULT now(),
-    PRIMARY KEY (source, metric, local_date)
+    PRIMARY KEY (user_id, source, metric, local_date)
 );
 
 CREATE INDEX IF NOT EXISTS daily_metrics_metric_date

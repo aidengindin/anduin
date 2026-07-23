@@ -6,6 +6,7 @@
 -- `source` is kept for future-proofing.
 
 CREATE TABLE IF NOT EXISTS raw.strength_exercises (
+    user_id       int          NOT NULL REFERENCES identity.users(id),
     source        text         NOT NULL,
     activity_uid  text         NOT NULL,
     exercise_uid  text         NOT NULL,
@@ -14,8 +15,9 @@ CREATE TABLE IF NOT EXISTS raw.strength_exercises (
     is_unilateral boolean      NOT NULL DEFAULT false,
     raw           jsonb        NOT NULL,
     ingested_at   timestamptz  NOT NULL DEFAULT now(),
-    PRIMARY KEY (source, activity_uid, exercise_uid),
-    FOREIGN KEY (source, activity_uid) REFERENCES raw.activities (source, activity_uid)
+    PRIMARY KEY (user_id, source, activity_uid, exercise_uid),
+    FOREIGN KEY (user_id, source, activity_uid)
+        REFERENCES raw.activities (user_id, source, activity_uid)
         ON DELETE CASCADE
 );
 
@@ -24,6 +26,7 @@ CREATE TABLE IF NOT EXISTS raw.strength_exercises (
 -- (right) side and `left_reps` the optional left side. A bilateral set leaves
 -- `left_reps` NULL and puts the single value in `reps`.
 CREATE TABLE IF NOT EXISTS raw.strength_sets (
+    user_id       int              NOT NULL REFERENCES identity.users(id),
     source        text             NOT NULL,
     activity_uid  text             NOT NULL,
     exercise_uid  text             NOT NULL,
@@ -36,9 +39,9 @@ CREATE TABLE IF NOT EXISTS raw.strength_sets (
     is_warmup     boolean          NOT NULL DEFAULT false,
     raw           jsonb            NOT NULL,
     ingested_at   timestamptz      NOT NULL DEFAULT now(),
-    PRIMARY KEY (source, activity_uid, exercise_uid, set_index),
-    FOREIGN KEY (source, activity_uid, exercise_uid)
-        REFERENCES raw.strength_exercises (source, activity_uid, exercise_uid)
+    PRIMARY KEY (user_id, source, activity_uid, exercise_uid, set_index),
+    FOREIGN KEY (user_id, source, activity_uid, exercise_uid)
+        REFERENCES raw.strength_exercises (user_id, source, activity_uid, exercise_uid)
         ON DELETE CASCADE
 );
 

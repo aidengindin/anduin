@@ -111,6 +111,7 @@ def extract(
     dry_run: bool = False,
 ) -> SourceResult:
     result = SourceResult(source="withings")
+    user_id = app.file.user_id
     if not app.secrets.withings_client_id or not app.secrets.withings_client_secret:
         result.error("withings: missing WITHINGS_CLIENT_ID or WITHINGS_CLIENT_SECRET")
         return result
@@ -158,7 +159,7 @@ def extract(
         return result
 
     try:
-        n = upsert_samples(conn, rows)
+        n = upsert_samples(conn, user_id, rows)
         result.add("raw.samples", n)
     except Exception as e:  # noqa: BLE001
         result.error(f"withings upsert: {e!r}")

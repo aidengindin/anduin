@@ -167,6 +167,7 @@ def extract(
     dry_run: bool = False,
 ) -> SourceResult:
     result = SourceResult(source="intervals")
+    user_id = app.file.user_id
     if not app.secrets.intervals_api_key or not app.secrets.intervals_athlete_id:
         result.error("intervals: missing INTERVALS_API_KEY or INTERVALS_ATHLETE_ID")
         return result
@@ -206,7 +207,7 @@ def extract(
             logger.info("would upsert activity %s (%s)", aid, started_at)
         else:
             try:
-                upsert_activity(conn, row)
+                upsert_activity(conn, user_id, row)
                 result.add("raw.activities", 1)
             except Exception as e:  # noqa: BLE001
                 result.error(f"activity {aid}: {e!r}")
@@ -224,7 +225,7 @@ def extract(
             logger.info("  would upsert %d stream rows", len(rows))
             continue
         try:
-            n = upsert_activity_streams(conn, rows)
+            n = upsert_activity_streams(conn, user_id, rows)
             result.add("raw.activity_streams", n)
         except Exception as e:  # noqa: BLE001
             result.error(f"stream upsert {aid}: {e!r}")
@@ -239,7 +240,7 @@ def extract(
         logger.info("would upsert %d wellness (ctl/atl) rows", len(wellness))
     elif wellness:
         try:
-            n = upsert_daily_metrics(conn, wellness)
+            n = upsert_daily_metrics(conn, user_id, wellness)
             result.add("raw.daily_metrics", n)
         except Exception as e:  # noqa: BLE001
             result.error(f"wellness upsert: {e!r}")
