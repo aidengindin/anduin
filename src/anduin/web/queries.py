@@ -587,3 +587,21 @@ def _load_strength(cur: Any, source: str, activity_uid: str) -> list[dict[str, A
                 "is_warmup": bool(r["is_warmup"]),
             })
     return [exercises[u] for u in order]
+
+
+# --- monitoring ------------------------------------------------------------
+
+
+def ingest_freshness(conn: Connection) -> list[dict[str, Any]]:
+    """Per-source ingest freshness for the Prometheus /-/metrics endpoint:
+    the epoch of the most recent ingested row and the lag since. Reads
+    derived.ingest_freshness (see migration 0020)."""
+    with conn.cursor() as cur:
+        cur.execute("""
+            SELECT source,
+                   extract(epoch FROM last_ingest_at)::bigint AS last_ingest_epoch,
+                   lag_seconds
+            FROM derived.ingest_freshness
+            ORDER BY source
+        """)
+        return cur.fetchall()

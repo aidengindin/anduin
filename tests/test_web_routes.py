@@ -99,6 +99,19 @@ def test_metric_json_unknown_404(client):
     assert r.status_code == 404
 
 
+def test_prometheus_metrics_endpoint(client, monkeypatch):
+    monkeypatch.setattr(
+        queries, "ingest_freshness",
+        lambda conn: [
+            {"source": "google_health", "last_ingest_epoch": 1_700_000_000, "lag_seconds": 42},
+        ],
+    )
+    r = client.get("/-/metrics")
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("text/plain; version=0.0.4")
+    assert 'anduin_source_ingest_lag_seconds{source="google_health"} 42' in r.text
+
+
 def test_workouts_list_renders(client, monkeypatch):
     monkeypatch.setattr(
         queries, "list_workouts",

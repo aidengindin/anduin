@@ -9,11 +9,15 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI, Response
 from fastapi.staticfiles import StaticFiles
+from psycopg import Connection
 
 from anduin.config import AppConfig
+from anduin.web import queries
 from anduin.web.db import make_pool
+from anduin.web.deps import get_conn
+from anduin.web.prometheus import CONTENT_TYPE, render_ingest_metrics
 from anduin.web.routes import dashboard, metrics, workouts
 from anduin.web.templating import templates
 
@@ -58,5 +62,17 @@ def create_app(config: AppConfig) -> FastAPI:
     @app.get("/healthz", include_in_schema=False)
     def healthz() -> dict[str, str]:
         return {"status": "ok"}
+
+    # Prometheus scrape target. Lives at /-/metrics (not /metrics -- that's the
+    # UI health-metrics page). Exposes per-source ingest freshness so Grafana can
+    # alert when a source's data stops landing. Scrape config sets metrics_path
+    # accordingly. Uses the pooled connection via get_conn so route tests can
+    # override it.
+    @app.get("/-/metrics", include_in_schema=False)
+    def prometheus_metrics(conn: Connection = Depends(get_conn)) -> Response:
+        return Response(
+            content=render_ingest_metrics(queries.ingest_freshness(conn)),
+            media_type=CONTENT_TYPE,
+        )
 
     return app
