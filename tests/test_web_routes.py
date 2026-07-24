@@ -52,7 +52,7 @@ def test_dashboard_renders(client, monkeypatch):
             "rhr": None,
             "weight": None,
             "body_fat": None,
-            "steps": None,
+            "steps": {"value": 7654},
             "step_goal": 10000,
             "hrv_status": None,
             "rhr_status": None,
@@ -66,6 +66,8 @@ def test_dashboard_renders(client, monkeypatch):
     # The home template renders a greeting and a sleep hero card.
     assert "Good" in r.text  # Good morning / Good afternoon / Good evening
     assert "Sleep" in r.text
+    assert "7,654" in r.text
+    assert "/ 10,000" not in r.text
 
 
 def test_metrics_page_lists_all_metrics(client, monkeypatch):

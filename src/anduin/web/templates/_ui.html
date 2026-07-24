@@ -48,6 +48,7 @@
 <a class="row" href="{{ c.href if c.href is defined else '/metrics/' + c.key }}">
   <span class="dot" style="background:{{ c.color }};"></span>
   <div class="main"><div class="name">{{ c.label }}</div><div class="desc">{{ c.desc }}</div></div>
+  {% if c.status is defined and c.status %}<span class="chip {{ c.status }}" style="padding:2px 9px;font-size:10.5px;">{{ c.status }}</span>{% endif %}
   {{ spark(c.spark, c.color) }}
   <div class="rt">
     {% if c.bp is defined and c.bp %}

@@ -39,6 +39,7 @@ METRICS: dict[str, dict[str, Any]] = {
         "label": "Respiratory rate", "desc": "Overnight breaths/min", "unit": "br/min",
         "group": "recovery", "color": "#4bc8c2", "view": "canonical.respiratory_rate",
         "date_col": "local_date", "value_col": "value", "digits": 1, "better": None,
+        "status": "respiratory_rate",
     },
     "spo2": {
         "label": "SpO₂", "desc": "Overnight blood oxygen", "unit": "%", "group": "recovery",
@@ -46,15 +47,16 @@ METRICS: dict[str, dict[str, Any]] = {
         "date_col": "local_date", "value_col": "spo2_avg", "digits": 0, "better": "high",
     },
     "skin_temp": {
-        "label": "Skin temperature", "desc": "Nightly", "unit": "°C", "group": "recovery",
+        "label": "Skin temperature", "desc": "Nightly baseline deviation", "unit": "°C Δ",
+        "group": "recovery",
         "color": "#59b6d6", "view": "canonical.skin_temp",
         "date_col": "valid_from", "value_col": "value", "digits": 1, "better": None,
     },
     "body_weight": {
-        "label": "Body weight", "desc": "Withings", "unit": "kg", "group": "body",
+        "label": "Body weight", "desc": "Withings", "unit": "lb", "group": "body",
         "color": "#6dd0b0", "view": "canonical.body_weight",
         "date_col": "valid_from", "value_col": "value", "digits": 1, "better": "low",
-        "trend": "body_composition_trend",
+        "trend": "body_composition_trend", "display_scale": 2.2046226218,
     },
     "body_fat_ratio": {
         "label": "Body fat", "desc": "Withings", "unit": "%", "group": "body",
@@ -63,15 +65,52 @@ METRICS: dict[str, dict[str, Any]] = {
         "trend": "body_composition_trend",
     },
     "muscle_mass": {
-        "label": "Muscle mass", "desc": "Withings", "unit": "kg", "group": "body",
+        "label": "Muscle mass", "desc": "Withings", "unit": "lb", "group": "body",
         "color": "#6dd0b0", "view": "canonical.muscle_mass",
         "date_col": "valid_from", "value_col": "value", "digits": 1, "better": "high",
-        "trend": "body_composition_trend",
+        "trend": "body_composition_trend", "display_scale": 2.2046226218,
+    },
+    "fat_free_mass": {
+        "label": "Fat-free mass", "desc": "Withings", "unit": "lb", "group": "body",
+        "color": "#6dd0b0", "view": "canonical.fat_free_mass",
+        "date_col": "valid_from", "value_col": "value", "digits": 1, "better": "high",
+        "trend": "body_composition_trend", "display_scale": 2.2046226218,
     },
     "steps": {
         "label": "Steps", "desc": "Daily total", "unit": "", "group": "activity",
-        "color": "#3fd6a0", "view": "canonical.steps_daily",
+        "color": "#3fd6a0", "view": "canonical.activity_daily",
         "date_col": "local_date", "value_col": "value", "digits": 0, "better": "high",
+        "where": "metric = 'steps' AND kind = 'total'",
+    },
+    "steps_neat": {
+        "label": "NEAT steps", "desc": "Outside recorded workouts", "unit": "",
+        "group": "activity", "color": "#57b88f", "view": "canonical.activity_daily",
+        "date_col": "local_date", "value_col": "value", "digits": 0, "better": "high",
+        "where": "metric = 'steps' AND kind = 'neat'",
+    },
+    "steps_workout": {
+        "label": "Exercise steps", "desc": "Recorded workouts", "unit": "",
+        "group": "activity", "color": "#72e6b9", "view": "canonical.activity_daily",
+        "date_col": "local_date", "value_col": "value", "digits": 0, "better": "high",
+        "where": "metric = 'steps' AND kind = 'workout'",
+    },
+    "active_calories": {
+        "label": "Active calories", "desc": "Daily total", "unit": "kcal",
+        "group": "activity", "color": "#f0a63c", "view": "canonical.activity_daily",
+        "date_col": "local_date", "value_col": "value", "digits": 0, "better": "high",
+        "where": "metric = 'active_calories' AND kind = 'total'",
+    },
+    "active_calories_neat": {
+        "label": "NEAT calories", "desc": "Outside recorded workouts", "unit": "kcal",
+        "group": "activity", "color": "#c68d42", "view": "canonical.activity_daily",
+        "date_col": "local_date", "value_col": "value", "digits": 0, "better": "high",
+        "where": "metric = 'active_calories' AND kind = 'neat'",
+    },
+    "active_calories_workout": {
+        "label": "Exercise calories", "desc": "Recorded workouts", "unit": "kcal",
+        "group": "activity", "color": "#f6bd62", "view": "canonical.activity_daily",
+        "date_col": "local_date", "value_col": "value", "digits": 0, "better": "high",
+        "where": "metric = 'active_calories' AND kind = 'workout'",
     },
     "form": {
         "label": "Form (TSB)", "desc": "Fitness − fatigue", "unit": "", "group": "activity",
@@ -80,7 +119,6 @@ METRICS: dict[str, dict[str, Any]] = {
     },
 }
 
-STEP_GOAL = 10000
 SLEEP_GOAL_MIN = 480  # 8h reference for the ring
 
 
@@ -106,6 +144,12 @@ def _where(m: dict) -> str:
     return f"AND {m['where']}" if m.get("where") else ""
 
 
+def _value_expr(m: dict) -> str:
+    value = m["value_col"]
+    scale = m.get("display_scale")
+    return f"({value} * {scale})" if scale is not None else value
+
+
 def _spark_points(values: list[float], width: int = 60, height: int = 24, pad: int = 3) -> str:
     """SVG polyline points for a sparkline. Flat line if all-equal / single point."""
     if not values:
@@ -125,7 +169,7 @@ def _spark_points(values: list[float], width: int = 60, height: int = 24, pad: i
 def _daily_values(conn: Connection, m: dict, days: int = 14) -> list[float]:
     """Trailing per-day values for a sparkline, oldest→newest."""
     sql = f"""
-        SELECT avg({m['value_col']}) AS v
+        SELECT avg({_value_expr(m)}) AS v
         FROM {m['view']}
         WHERE {m['date_col']} >= (now() - make_interval(days => %(days)s)) {_where(m)}
         GROUP BY date_trunc('day', {m['date_col']})
@@ -140,7 +184,7 @@ def _latest(conn: Connection, m: dict) -> dict[str, Any] | None:
     """Latest value + a 7-day mean of the preceding readings, for a delta."""
     sql = f"""
         WITH s AS (
-            SELECT {m['date_col']} AS d, {m['value_col']} AS v
+            SELECT {m['date_col']} AS d, {_value_expr(m)} AS v
             FROM {m['view']}
             WHERE {m['value_col']} IS NOT NULL {_where(m)}
             ORDER BY {m['date_col']} DESC
@@ -180,11 +224,12 @@ def _card(conn: Connection, key: str, spark_days: int = 14) -> dict[str, Any] | 
             good = (rising and better == "high") or (not rising and better == "low")
             dir_ = "down" if good else "up"  # 'down' class = good/teal, 'up' = neutral teal
     per_week = _body_slope_per_week(conn, key) if m.get("trend") == "body_composition_trend" else None
+    status = _metric_status(conn, m.get("status"))
     return {
         "key": key, "label": m["label"], "desc": m["desc"], "unit": m["unit"],
         "color": m["color"], "group": m["group"], "digits": m["digits"],
         "value": latest["value"], "at": latest["at"], "delta": delta, "dir": dir_,
-        "per_week": per_week, "spark": _spark_points(vals),
+        "per_week": per_week, "spark": _spark_points(vals), "status": status,
     }
 
 
@@ -198,7 +243,25 @@ def _body_slope_per_week(conn: Connection, metric: str) -> float | None:
             LIMIT 1
         """, {"metric": metric})
         r = cur.fetchone()
-    return float(r["slope_per_week"]) if r and r["slope_per_week"] is not None else None
+    if not r or r["slope_per_week"] is None:
+        return None
+    return float(r["slope_per_week"]) * METRICS[metric].get("display_scale", 1.0)
+
+
+def _metric_status(conn: Connection, status: str | None) -> str | None:
+    if status != "respiratory_rate":
+        return None
+    with conn.cursor() as cur:
+        cur.execute("""
+            SELECT base_n, elevated
+            FROM derived.respiratory_rate_status
+            ORDER BY local_date DESC
+            LIMIT 1
+        """)
+        row = cur.fetchone()
+    if not row or row["base_n"] < 14:
+        return "pending"
+    return "elevated" if row["elevated"] else "normal"
 
 
 def blood_pressure_row(conn: Connection) -> dict[str, Any] | None:
@@ -255,7 +318,6 @@ def home(conn: Connection) -> dict[str, Any]:
     out["weight"] = _card(conn, "body_weight")
     out["body_fat"] = _card(conn, "body_fat_ratio")
     out["steps"] = _card(conn, "steps")
-    out["step_goal"] = STEP_GOAL
 
     # HRV / RHR status chips.
     out["hrv_status"] = _status(conn, "derived.hrv_status", "status")
@@ -317,7 +379,9 @@ def metric_series(conn: Connection, metric: str, start: date | datetime, end: da
     dcol = m["date_col"]
     sql = f"""
         SELECT time_bucket(%(bucket)s::interval, {dcol}::timestamptz) AS t,
-               avg({m['value_col']}) AS avg, min({m['value_col']}) AS min, max({m['value_col']}) AS max
+               avg({_value_expr(m)}) AS avg,
+               min({_value_expr(m)}) AS min,
+               max({_value_expr(m)}) AS max
         FROM {m['view']}
         WHERE {dcol}::timestamptz >= %(start)s AND {dcol}::timestamptz < %(end)s {_where(m)}
         GROUP BY t ORDER BY t
@@ -384,13 +448,13 @@ def metric_detail(conn: Connection, metric: str) -> dict[str, Any]:
     # 7-day / range stats.
     sql = f"""
         SELECT avg(v) AS avg7, min(v) AS lo, max(v) AS hi FROM (
-            SELECT {m['value_col']} AS v FROM {m['view']}
+            SELECT {_value_expr(m)} AS v FROM {m['view']}
             WHERE {m['value_col']} IS NOT NULL {_where(m)}
             ORDER BY {m['date_col']} DESC LIMIT 7
         ) q
     """
     recent_sql = f"""
-        SELECT {m['date_col']} AS d, {m['value_col']} AS v FROM {m['view']}
+        SELECT {m['date_col']} AS d, {_value_expr(m)} AS v FROM {m['view']}
         WHERE {m['value_col']} IS NOT NULL {_where(m)}
         ORDER BY {m['date_col']} DESC LIMIT 8
     """
@@ -406,6 +470,7 @@ def metric_detail(conn: Connection, metric: str) -> dict[str, Any]:
         "avg7": float(stats["avg7"]) if stats.get("avg7") is not None else None,
         "lo": lo, "hi": hi,
         "recent": [{"d": r["d"], "v": float(r["v"])} for r in recent],
+        "status": card.get("status") if card else None,
     }
 
 

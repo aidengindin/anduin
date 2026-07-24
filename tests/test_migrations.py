@@ -29,3 +29,10 @@ def test_migrations_idempotent_markers():
                     raise AssertionError(
                         f"{p.name}: `{stmt.strip()}` without IF NOT EXISTS: {line.strip()!r}"
                     )
+
+
+def test_activity_daily_uses_source_local_dates():
+    files = resources.files("anduin.migrations")
+    text = (files / "0021_activity_daily.sql").read_text(encoding="utf-8")
+    assert "civilStartTime,date" in text
+    assert "start_date_local" in text

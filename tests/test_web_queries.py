@@ -74,6 +74,36 @@ def test_metric_series_unknown_metric_raises():
         queries.metric_series(FakeConn([]), "nonsense", date(2026, 7, 1), date(2026, 7, 2))
 
 
+def test_imperial_body_metrics_convert_values_and_trends():
+    weight = queries.METRICS["body_weight"]
+    assert weight["unit"] == "lb"
+    assert queries._value_expr(weight) == "(value * 2.2046226218)"
+
+    conn = FakeConn([{"slope_per_week": 1.0}])
+    assert queries._body_slope_per_week(conn, "body_weight") == pytest.approx(2.2046226218)
+
+
+def test_activity_metrics_expose_total_neat_and_workout():
+    for base in ("steps", "active_calories"):
+        assert "kind = 'total'" in queries.METRICS[base]["where"]
+        assert "kind = 'neat'" in queries.METRICS[f"{base}_neat"]["where"]
+        assert "kind = 'workout'" in queries.METRICS[f"{base}_workout"]["where"]
+
+
+@pytest.mark.parametrize(
+    "row,expected",
+    [
+        (None, "pending"),
+        ({"base_n": 10, "elevated": False}, "pending"),
+        ({"base_n": 20, "elevated": False}, "normal"),
+        ({"base_n": 20, "elevated": True}, "elevated"),
+    ],
+)
+def test_respiratory_rate_status(row, expected):
+    conn = FakeConn([row])
+    assert queries._metric_status(conn, "respiratory_rate") == expected
+
+
 @pytest.mark.parametrize(
     "since,until,expected",
     [
