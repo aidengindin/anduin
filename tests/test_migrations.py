@@ -33,6 +33,18 @@ def test_migrations_idempotent_markers():
 
 def test_activity_daily_uses_source_local_dates():
     files = resources.files("anduin.migrations")
-    text = (files / "0021_activity_daily.sql").read_text(encoding="utf-8")
-    assert "civilStartTime,date" in text
-    assert "start_date_local" in text
+    for name in ("0021_activity_daily.sql", "0022_activity_daily_materialized.sql"):
+        text = (files / name).read_text(encoding="utf-8")
+        assert "civilStartTime,date" in text
+        assert "start_date_local" in text
+
+
+def test_activity_daily_is_materialized_with_concurrent_refresh_index():
+    """0022 must replace the 0021 view with a matview and keep the unique index
+    REFRESH ... CONCURRENTLY depends on."""
+    files = resources.files("anduin.migrations")
+    text = (files / "0022_activity_daily_materialized.sql").read_text(encoding="utf-8")
+    assert "DROP VIEW IF EXISTS canonical.activity_daily" in text
+    assert "CREATE MATERIALIZED VIEW IF NOT EXISTS canonical.activity_daily" in text
+    assert "CREATE UNIQUE INDEX IF NOT EXISTS activity_daily_metric_kind_date" in text
+    assert "GRANT SELECT ON canonical.activity_daily TO anduin_ro" in text

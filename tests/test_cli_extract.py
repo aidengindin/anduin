@@ -40,3 +40,46 @@ def test_dry_run_does_not_open_db(monkeypatch):
 
     assert rc == 0
     assert seen["conn"] is None
+
+
+def test_wet_run_refreshes_activity_daily(monkeypatch):
+    """A non-dry extract must refresh the materialized activity_daily rollup
+    with the same connection the extractor wrote through."""
+    calls = []
+    fake_conn = object()
+
+    class _Ctx:
+        def __enter__(self):
+            return fake_conn
+
+        def __exit__(self, *exc):  # noqa: ANN002
+            return False
+
+    monkeypatch.setattr(cli.db_mod, "connect", lambda url: _Ctx())
+    monkeypatch.setattr(cli.db_mod, "refresh_activity_daily", calls.append)
+    monkeypatch.setattr(
+        cli.google_health, "extract",
+        lambda http, conn, app, since, until, *, dry_run:
+            base.SourceResult(source="google_health"),
+    )
+
+    rc = cli._run_extract(_args(dry_run=False), _app())
+
+    assert rc == 0
+    assert calls == [fake_conn]
+
+
+def test_dry_run_skips_activity_daily_refresh(monkeypatch):
+    monkeypatch.setattr(
+        cli.db_mod, "refresh_activity_daily",
+        lambda conn: (_ for _ in ()).throw(AssertionError("dry-run must not refresh")),
+    )
+    monkeypatch.setattr(
+        cli.google_health, "extract",
+        lambda http, conn, app, since, until, *, dry_run:
+            base.SourceResult(source="google_health"),
+    )
+
+    rc = cli._run_extract(_args(dry_run=True), _app())
+
+    assert rc == 0

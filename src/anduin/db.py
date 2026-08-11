@@ -54,6 +54,22 @@ def _migration_files() -> list[tuple[str, str]]:
     return out
 
 
+def refresh_activity_daily(conn: Connection) -> None:
+    """Recompute the canonical.activity_daily materialized rollup.
+
+    Called after each ingest — the rollup only changes when new raw data lands.
+    CONCURRENTLY keeps web reads on the old contents instead of blocking, but
+    cannot run inside a transaction, hence the autocommit flip.
+    """
+    conn.commit()
+    prev = conn.autocommit
+    conn.autocommit = True
+    try:
+        conn.execute("REFRESH MATERIALIZED VIEW CONCURRENTLY canonical.activity_daily;")
+    finally:
+        conn.autocommit = prev
+
+
 def migrate(dsn: str) -> int:
     """Apply pending migrations. Returns number applied."""
     applied_n = 0

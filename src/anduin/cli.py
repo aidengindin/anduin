@@ -105,6 +105,15 @@ def _run_extract(args: argparse.Namespace, app: cfg_mod.AppConfig) -> int:
         else:
             raise AssertionError(args.source)
 
+        # The activity_daily rollup is materialized (migration 0022) and only
+        # changes when an ingest lands, so this is the one place it refreshes.
+        # A failed refresh leaves the UI rollup stale but loses no data.
+        if conn is not None:
+            try:
+                db_mod.refresh_activity_daily(conn)
+            except Exception:
+                logger.exception("canonical.activity_daily refresh failed")
+
     logger.info(
         "source=%s rows=%s errors=%d", result.source, result.rows_by_table, len(result.errors)
     )
