@@ -128,7 +128,7 @@ def test_list_workouts_maps_header_and_flags():
         {
             "source": "intervals", "activity_uid": "a1", "sport": "cycling", "program": None,
             "device": "wahoo", "started_at": _dt(2026, 7, 1, 8), "ended_at": _dt(2026, 7, 1, 9),
-            "duration_s": 3600.0, "calories": 700.0, "calories_is_derived": True,
+            "duration_s": 3600.0, "calories": 700.0, "calories_is_derived": True, "calories_method": "work",
             "training_load": 55.0, "steps": None, "steps_is_derived": False,
         }
     ]
@@ -151,7 +151,7 @@ def test_list_workouts_includes_source_url():
     rows = [
         {"source": "intervals", "activity_uid": "i9", "sport": "Ride", "program": None,
          "device": None, "started_at": _dt(2026, 7, 1, 8), "ended_at": _dt(2026, 7, 1, 9),
-         "duration_s": 3600.0, "calories": None, "calories_is_derived": False,
+         "duration_s": 3600.0, "calories": None, "calories_is_derived": False, "calories_method": None,
          "training_load": None, "steps": None, "steps_is_derived": False},
     ]
     out = queries.list_workouts(FakeConn([rows]), date(2026, 7, 1), date(2026, 7, 2))
@@ -162,7 +162,7 @@ def test_workout_detail_groups_streams_and_strength():
     header = {
         "source": "liftosaur", "activity_uid": "w9", "sport": "strength", "program": "GZCLP",
         "device": None, "started_at": _dt(2026, 7, 1, 18), "ended_at": None,
-        "duration_s": None, "calories": None, "calories_is_derived": False,
+        "duration_s": None, "calories": None, "calories_is_derived": False, "calories_method": None,
         "training_load": None, "steps": None, "steps_is_derived": False,
     }
     streams = []  # no cardio streams for pure strength

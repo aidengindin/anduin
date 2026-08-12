@@ -60,6 +60,41 @@ the Fitbit Air wins. For sample-grained metrics this runs through
 precedence rows predate the union view and are inert for the workout/Air split —
 that reconciliation now lives in the `canonical.heart_rate` union itself.
 
+### Workout calories: a fallback chain, with the losers kept
+
+`canonical.workout_load.calories` picks the best available number in this order
+(migration 0023), recording which one won in `calories_method`:
+
+1. **`source`** — intervals computed it. Trust it.
+2. **`work`** — `icu_joules / 1000` for rides missing calories. That constant is
+   the ~24% gross-efficiency identity (1 kJ of mechanical work ≈ 1 kcal burned),
+   *not* a unit conversion — `/ 4184` would give kcal of work and undercount the
+   metabolic cost ~4×. Verified against rides where intervals supplies both.
+3. **`met_strength`** — MET model for lifting: `(MET − 1) × 1.05 × mass_kg ×
+   hours`, MET scaling 3.5→6.0 on working-set density (clamped to 0.20–0.50
+   sets/min), body mass from the latest Withings `body_weight`.
+4. **`fitbit_window`** — sum of in-window `active_energy` samples.
+
+The MET model outranks Fitbit for strength deliberately: a wrist accelerometer
+can't see isometric load and can't tell the session is resistance training at
+all, and its output is erratic (1.56–3.67 kcal/min across near-identical
+sessions of the same program). **There is no ground truth for either** — no
+metabolic cart, no logged intake — so this buys consistency, not verified
+accuracy. `calories_met`, `calories_fitbit` and `calories_work` are all exposed
+as columns so the models can be compared on accumulated data before anything is
+discarded.
+
+Everything here is net of resting metabolism (Health Connect's
+`ActiveCaloriesBurned` is above-BMR; the MET model subtracts 1 MET), so the
+columns are comparable and summing into `activity_daily` never double-counts
+BMR.
+
+Note the interaction with the window guard: any workout with a non-NULL
+`ended_at` carves a window that removes its samples from `neat_energy`, so a
+workout that carves a window **must** contribute a calorie number or that energy
+vanishes from `total_energy` — which is exactly what happened to every liftosaur
+session before 0023 (55–180 kcal each).
+
 ## Units / naming gotchas
 
 - intervals.icu activity streams store HR under metric **`heartrate`** (no

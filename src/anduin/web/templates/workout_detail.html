@@ -19,7 +19,7 @@
 <div class="grid c3" style="margin-top:14px;">
   <div class="card" style="padding:13px 14px;"><div class="muted" style="font-size:11px;">Duration</div><div class="num" style="color:var(--text);font-weight:700;font-size:19px;margin-top:3px;">{{ header.duration_s|fmt_dur }}</div></div>
   <div class="card" style="background:linear-gradient(135deg,{{ accent }}22,rgba(20,24,31,0));border-color:{{ accent }}47;padding:13px 14px;"><div style="color:{{ accent }};font-size:11px;">Load</div><div class="num" style="color:var(--text);font-weight:700;font-size:19px;margin-top:3px;">{{ header.training_load|fmt_num(0) }}</div></div>
-  <div class="card" style="padding:13px 14px;"><div class="muted" style="font-size:11px;">Calories</div><div class="num" style="color:var(--text);font-weight:700;font-size:19px;margin-top:3px;">{{ header.calories|fmt_num(0) }}{% if header.calories_is_derived %}<span class="muted"> ≈</span>{% endif %}</div></div>
+  <div class="card" style="padding:13px 14px;"><div class="muted" style="font-size:11px;">Calories</div><div class="num" style="color:var(--text);font-weight:700;font-size:19px;margin-top:3px;">{{ header.calories|fmt_num(0) }}{% if header.calories_is_derived %}<span class="muted" title="estimated ({{ header.calories_method }})"> ≈</span>{% endif %}</div></div>
   {% if header.steps %}
   <div class="card" style="padding:13px 14px;"><div class="muted" style="font-size:11px;">Steps</div><div class="num" style="color:var(--text);font-weight:700;font-size:19px;margin-top:3px;">{{ header.steps|fmt_num(0) }}{% if header.steps_is_derived %}<span class="muted"> ≈</span>{% endif %}</div></div>
   {% endif %}

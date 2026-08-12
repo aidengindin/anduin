@@ -529,7 +529,7 @@ _WORKOUT_HEADER_SELECT = """
         a.source, a.activity_uid, a.sport, a.program, a.device,
         a.started_at, a.ended_at,
         EXTRACT(EPOCH FROM (a.ended_at - a.started_at)) AS duration_s,
-        wl.calories, wl.calories_is_derived, wl.training_load,
+        wl.calories, wl.calories_is_derived, wl.calories_method, wl.training_load,
         ws.steps, ws.steps_is_derived
     FROM raw.activities a
     LEFT JOIN canonical.workout_load  wl ON wl.source = a.source AND wl.activity_uid = a.activity_uid
@@ -557,6 +557,7 @@ def _header_row(r: dict[str, Any]) -> dict[str, Any]:
         "duration_s": int(r["duration_s"]) if r["duration_s"] is not None else None,
         "calories": float(r["calories"]) if r["calories"] is not None else None,
         "calories_is_derived": bool(r["calories_is_derived"]),
+        "calories_method": r.get("calories_method"),
         "training_load": float(r["training_load"]) if r["training_load"] is not None else None,
         "steps": float(r["steps"]) if r["steps"] is not None else None,
         "steps_is_derived": bool(r["steps_is_derived"]),
