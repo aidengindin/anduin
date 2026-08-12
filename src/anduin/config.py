@@ -57,6 +57,11 @@ class IntervalsConfig(BaseModel):
     enabled: bool = True
     window_days: int = 3
     pull_streams: bool = True
+    # Activity names containing any of these (case-insensitive substring) are
+    # skipped. A separate service mirrors Liftosaur workouts into intervals.icu,
+    # so ingesting them here would duplicate the rows the liftosaur extractor
+    # already writes. The mirrored activities are always named "Liftosaur: ...".
+    skip_name_contains: list[str] = ["liftosaur"]
 
 
 class LiftosaurConfig(BaseModel):

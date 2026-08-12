@@ -72,6 +72,20 @@ def _activity_window(act: dict) -> tuple[datetime, datetime]:
     return started_at, ended_at
 
 
+def _is_skipped(act: dict, patterns) -> bool:
+    """True when the activity name matches a configured skip pattern.
+
+    Liftosaur workouts are mirrored into intervals.icu by a separate sync
+    service, so they arrive here as duplicates of what the liftosaur extractor
+    already ingests. Those mirrored activities carry "Liftosaur" in the name,
+    which is the only reliable marker on the intervals side.
+    """
+    name = (act.get("name") or "").lower()
+    if not name:
+        return False
+    return any(p.lower() in name for p in patterns or ())
+
+
 def _list_activities(
     http: httpx.Client, athlete_id: str, api_key: str, start: date, end: date
 ) -> list[dict]:
@@ -180,6 +194,16 @@ def extract(
     except Exception as e:  # noqa: BLE001
         result.error(f"list activities {since}..{until}: {e!r}")
         return result
+
+    skip_patterns = app.file.intervals.skip_name_contains
+    skipped = [a for a in activities if _is_skipped(a, skip_patterns)]
+    if skipped:
+        activities = [a for a in activities if not _is_skipped(a, skip_patterns)]
+        logger.info(
+            "intervals: skipping %d mirrored activities (%s)",
+            len(skipped),
+            ", ".join(sorted({str(a.get("name")) for a in skipped})),
+        )
 
     logger.info("intervals: %d activities in %s..%s", len(activities), since, until)
 

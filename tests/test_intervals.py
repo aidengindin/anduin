@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from datetime import date
 
-from anduin.sources.intervals import _wellness_rows
+from anduin.config import IntervalsConfig
+from anduin.sources.intervals import _is_skipped, _wellness_rows
 
 
 def test_wellness_rows_emits_ctl_and_atl():
@@ -31,3 +32,18 @@ def test_wellness_rows_skips_missing_date_or_values():
     ]
     rows = _wellness_rows(records)
     assert [(r["metric"], r["local_date"]) for r in rows] == [("atl", date(2026, 7, 12))]
+
+
+def test_is_skipped_matches_liftosaur_mirror_by_default():
+    patterns = IntervalsConfig().skip_name_contains
+    # Real shape of the mirrored activities: "Liftosaur: Week 2 - Day 2 (A)".
+    assert _is_skipped({"name": "Liftosaur: Week 2 - Day 2 (A)"}, patterns)
+    assert _is_skipped({"name": "liftosaur: week 1 - day 1"}, patterns)  # case-insensitive
+
+
+def test_is_skipped_leaves_real_activities_alone():
+    patterns = IntervalsConfig().skip_name_contains
+    assert not _is_skipped({"name": "Morning Ride"}, patterns)
+    assert not _is_skipped({"name": None}, patterns)
+    assert not _is_skipped({}, patterns)
+    assert not _is_skipped({"name": "Liftosaur: Week 1"}, [])  # opt-out via config
