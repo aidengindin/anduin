@@ -633,7 +633,11 @@ def _load_strength(cur: Any, source: str, activity_uid: str) -> list[dict[str, A
         LEFT JOIN raw.strength_sets s
                ON s.source = e.source AND s.activity_uid = e.activity_uid AND s.exercise_uid = e.exercise_uid
         WHERE e.source = %(source)s AND e.activity_uid = %(uid)s
-        ORDER BY e.exercise_idx, s.set_index
+        -- Warmups first: they're performed before the working sets, but the
+        -- Liftohistory text lists them after (`... / 3x8 120lb / warmup: ...`),
+        -- so set_index alone puts them last. Sorting here rather than at ingest
+        -- keeps set_index faithful to the source and fixes already-stored rows.
+        ORDER BY e.exercise_idx, s.is_warmup DESC, s.set_index
     """, {"source": source, "uid": activity_uid})
     exercises: dict[str, dict[str, Any]] = {}
     order: list[str] = []

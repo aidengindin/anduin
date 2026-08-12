@@ -44,7 +44,7 @@
     {% for s in ex.sets %}
     <div class="set">
       <span class="si num">{{ 'W' if s.is_warmup else s.set_index + 1 }}</span>
-      <span class="sv num"{% if not s.is_warmup and loop.last %} style="color:var(--text);font-weight:600;"{% endif %}>{{ s.weight_kg|fmt_num(1) }} kg × {{ s.reps if s.reps is not none else '—' }}{% if ex.is_unilateral and s.left_reps is not none %} / {{ s.left_reps }}{% endif %}</span>
+      <span class="sv num"{% if not s.is_warmup and loop.last %} style="color:var(--text);font-weight:600;"{% endif %}>{{ s.weight_kg|fmt_lb }} lb × {{ s.reps if s.reps is not none else '—' }}{% if ex.is_unilateral and s.left_reps is not none %} / {{ s.left_reps }}{% endif %}</span>
       <span class="num muted">{% if s.rpe is not none %}RPE {{ s.rpe|fmt_num(1) }}{% else %}—{% endif %}</span>
     </div>
     {% endfor %}

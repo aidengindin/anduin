@@ -11,6 +11,8 @@ from pathlib import Path
 
 from fastapi.templating import Jinja2Templates
 
+from anduin.sources.liftohistory import LBS_PER_KG
+
 _TEMPLATE_DIR = Path(__file__).parent / "templates"
 
 templates = Jinja2Templates(directory=str(_TEMPLATE_DIR))
@@ -56,6 +58,20 @@ def _fmt_clock(value: datetime | None) -> str:
     return value.strftime("%I:%M %p").lstrip("0")
 
 
+def _fmt_lb(kg: float | int | None) -> str:
+    """Kilograms → pounds for display, e.g. ``120`` / ``7.5``.
+
+    Strength sets are stored in kg (the canonical unit) but logged and read in
+    lb. Round-tripping the conversion leaves float noise, so round to a tenth
+    and drop a trailing ``.0`` — Liftosaur's increments are all multiples of
+    0.5 lb, so a tenth is enough to show 2.5/7.5 plates exactly.
+    """
+    if kg is None:
+        return "—"
+    lb = round(float(kg) * LBS_PER_KG, 1)
+    return f"{lb:,.0f}" if lb == int(lb) else f"{lb:,.1f}"
+
+
 def _fmt_signed(value: float | int | None, digits: int = 0) -> str:
     if value is None:
         return ""
@@ -69,3 +85,4 @@ templates.env.filters["fmt_num"] = _fmt_num
 templates.env.filters["fmt_hm"] = _fmt_hm
 templates.env.filters["fmt_clock"] = _fmt_clock
 templates.env.filters["fmt_signed"] = _fmt_signed
+templates.env.filters["fmt_lb"] = _fmt_lb

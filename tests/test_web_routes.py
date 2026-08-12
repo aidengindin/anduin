@@ -153,3 +153,27 @@ def test_workout_detail_404(client, monkeypatch):
     monkeypatch.setattr(queries, "workout_detail", lambda conn, src, uid: None)
     r = client.get("/workouts/x/y")
     assert r.status_code == 404
+
+
+def test_workout_detail_shows_pounds_and_warmups_first(client, monkeypatch):
+    # queries._load_strength already orders warmups first; the template must
+    # render that order as-is and display the stored kg as lb.
+    detail = {
+        "header": {"source": "liftosaur", "activity_uid": "w9", "sport": "strength", "program": "GZCLP",
+                   "device": None, "started_at": _dt(2026, 7, 1, 18), "ended_at": None, "duration_s": None,
+                   "calories": None, "calories_is_derived": False, "training_load": None,
+                   "steps": None, "steps_is_derived": False},
+        "streams": {},
+        "exercises": [
+            {"name": "Squat", "idx": 0, "is_unilateral": False, "sets": [
+                {"set_index": 3, "weight_kg": 11.34, "reps": 5, "left_reps": None, "rpe": None, "is_warmup": True},
+                {"set_index": 0, "weight_kg": 54.431, "reps": 8, "left_reps": None, "rpe": None, "is_warmup": False},
+            ]},
+        ],
+    }
+    monkeypatch.setattr(queries, "workout_detail", lambda conn, src, uid: detail)
+    r = client.get("/workouts/liftosaur/w9")
+    assert r.status_code == 200
+    assert "25 lb" in r.text and "120 lb" in r.text
+    assert " kg" not in r.text
+    assert r.text.index("25 lb") < r.text.index("120 lb")  # warmup rendered first

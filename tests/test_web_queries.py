@@ -187,3 +187,12 @@ def test_workout_detail_groups_streams_and_strength():
 def test_workout_detail_not_found_returns_none():
     conn = FakeConn([None])  # header fetchone -> None
     assert queries.workout_detail(conn, "x", "y") is None
+
+
+def test_strength_sql_orders_warmups_before_working_sets():
+    # Liftohistory lists warmups after the working sets, so set_index alone
+    # renders them last; the ordering has to come from the query.
+    cur = FakeCursor([[]])
+    queries._load_strength(cur, "liftosaur", "w9")
+    sql = " ".join(cur.executed[0][0].split())
+    assert "ORDER BY e.exercise_idx, s.is_warmup DESC, s.set_index" in sql
