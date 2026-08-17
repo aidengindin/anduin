@@ -40,9 +40,14 @@ PAGE_LIMIT = 200
 def _fetch_page(
     http: httpx.Client, api_key: str, since: date, until: date, cursor: str | None
 ) -> dict:
+    # `endDate` is EXCLUSIVE (verified against the live API: endDate=<today>
+    # returns nothing from today, endDate=<today+1> returns today's workout), so
+    # it gets the day *after* `until` — the same upper edge the client-side guard
+    # below uses. Passing `until` verbatim hid every workout until the UTC date
+    # rolled over, delaying a morning session by ~14h.
     params: dict[str, str] = {
         "startDate": since.isoformat(),
-        "endDate": until.isoformat(),
+        "endDate": (until + timedelta(days=1)).isoformat(),
         "limit": str(PAGE_LIMIT),
     }
     if cursor:
