@@ -280,7 +280,11 @@ without `:has()`.
 Against a scratch PostgreSQL 16 (TimescaleDB's `time_bucket` shimmed) seeded
 with 120 days of synthetic morning weigh-ins:
 
-- Migration 0025 applies, and re-applies, cleanly.
+- Migration 0025 applies, and re-applies, cleanly — verified both on a fresh
+  database and, after the first deploy failed, on one holding the *previous*
+  schema. Only the latter exercises `CREATE OR REPLACE VIEW` at all, which is
+  why the original column order (`avg_30d` beside `avg_7d`) passed here and
+  still broke production. New view columns must be appended last.
 - The phase-clipped query agrees with the view exactly once the window is full
   (both +0.787 lb/wk on the same data), confirming the clipping adds no skew.
 - The corridor's width is constant to floating-point across every drawn day, and

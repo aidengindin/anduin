@@ -156,6 +156,23 @@ by week 20 of a 0.4 lb/wk bulk), never re-anchored — so one bad fortnight
 displaced it permanently — and silently measured *cumulative* progress while the
 chip measured recent rate. Don't reintroduce it.
 
+### Extending a view: append, never reorder
+
+`CREATE OR REPLACE VIEW` can only **append** columns. Postgres refuses to
+rename, reorder or drop them, so a migration that redefines an existing view
+must keep every prior column in its original position and add new ones at the
+end — even when that reads worse (0025 puts `avg_30d` after `slope_per_week`
+rather than beside `avg_7d`).
+
+The trap is that the wrong order applies **cleanly to a fresh database** and
+fails only where the old view exists, i.e. only in production:
+
+    ERROR: cannot change name of view column "n_28d" to "avg_30d"
+
+`test_replaced_views_only_append_columns` enforces this across all migrations.
+And when verifying a migration by hand, apply it to a database holding the
+*previous* schema — a blank one cannot exercise `OR REPLACE` at all.
+
 ## Units / naming gotchas
 
 - intervals.icu activity streams store HR under metric **`heartrate`** (no
