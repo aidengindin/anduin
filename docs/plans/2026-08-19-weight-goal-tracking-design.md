@@ -240,8 +240,23 @@ on-target band without repeating the figure. When the phase is too young to
 judge, the header says `trend pending` and no rate is quoted anywhere; a number
 that isn't trustworthy shouldn't be on screen at all.
 
+The verdict rides that same chip — `↑ 0.49 lb/wk · on target` — rather than
+sitting in its own badge further down, so rate and judgement are read together.
+
 Other body-composition metrics keep their own unclipped `per_week` chip: they
 have no goal to clip to.
+
+## The editor is last, and closed
+
+The goal is set rarely and read constantly, so the editor is a `<details>` at the
+foot of the page, collapsed, with the current phase in its summary
+(`Goal · Bulk · 0.40 lb/wk`). Nothing above it changed position.
+
+The weekly-target field applies only to bulk and cut. It hides itself for the
+untargeted kinds through `form:has(input[value="maintain"]:checked) .goal-target`
+rather than JavaScript — the rule keys off live radio state, so it reacts on
+click with no round trip, and degrades to a harmlessly visible field on a browser
+without `:has()`.
 
 ## Verified
 

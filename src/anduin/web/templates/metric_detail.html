@@ -3,6 +3,7 @@
 {% block content %}
 {% set c = detail.card %}
 {% set m = detail.meta %}
+{% set verdict_text = {'on_target': 'on target', 'too_fast': 'too fast', 'too_slow': 'too slow'} %}
 <div class="topbar">
   <a class="back" href="/metrics">‹ Metrics</a>
   <span class="title">{{ m.label }}</span>
@@ -21,7 +22,7 @@
   {% if goal_status.pending %}
   <div class="chip pending" style="margin-top:12px;">trend pending</div>
   {% elif goal_status.rate is not none %}
-  <div class="chip {{ vchip.get(goal_status.verdict, 'balanced') }}" style="margin-top:12px;">{{ '↓' if goal_status.rate < 0 else '↑' }} {{ goal_status.rate|abs|fmt_num(2) }} {{ m.unit }}/wk</div>
+  <div class="chip {{ vchip.get(goal_status.verdict, 'balanced') }}" style="margin-top:12px;">{{ '↓' if goal_status.rate < 0 else '↑' }} {{ goal_status.rate|abs|fmt_num(2) }} {{ m.unit }}/wk{% if goal_status.verdict %} · {{ verdict_text[goal_status.verdict] }}{% endif %}</div>
   {% endif %}
   {% elif c.per_week is defined and c.per_week is not none %}
   <div class="chip {{ 'balanced' if c.dir == 'down' else 'high' if c.dir == 'up' else 'pending' }}" style="margin-top:12px;">{{ '↓' if c.per_week < 0 else '↑' }} {{ c.per_week|abs|fmt_num(c.digits) }} {{ m.unit }}/wk</div>
@@ -59,63 +60,6 @@
   {% endif %}
 </div>
 
-{% if metric == 'body_weight' %}
-{# Goal phase: current target, how the recent rate compares, and the editor.
-   Plain form, no JS -- POST redirects back here. #}
-{% set gs = goal_status %}
-{% set verdict_text = {'on_target': 'on target', 'too_fast': 'too fast', 'too_slow': 'too slow'} %}
-{% set verdict_chip = {'on_target': 'balanced', 'too_fast': 'high', 'too_slow': 'low'} %}
-<div class="card" style="margin-top:14px;">
-  <div style="display:flex;align-items:center;gap:10px;">
-    <div class="stat-label" style="flex:1;">Goal</div>
-    {% if goal and goal.kind != 'none' and gs.verdict %}
-    <span class="chip {{ verdict_chip[gs.verdict] }}">{{ verdict_text[gs.verdict] }}</span>
-    {% endif %}
-  </div>
-
-  {% if goal and goal.kind != 'none' %}
-  <div class="num" style="margin-top:8px;color:var(--text);font-size:15px;">
-    {{ goal.kind|capitalize }}
-    {%- if goal.target %} · target {{ goal.target|abs|fmt_num(2) }} lb/wk{% endif %}
-    <span class="muted" style="font-weight:500;"> since {{ goal.started_on|fmt_date }}</span>
-  </div>
-  <div class="muted" style="font-size:13px;margin-top:4px;">
-    {% if gs.pending %}
-    Needs ~2 weeks in this phase before the rate above means anything.
-    {% else %}
-    On target is {{ gs.lo|fmt_num(2) }} to {{ gs.hi|fmt_num(2) }} lb/wk.
-    {% endif %}
-  </div>
-  {% else %}
-  <div class="muted" style="font-size:13px;margin-top:6px;">No goal set.</div>
-  {% endif %}
-
-  {% if goal_error %}
-  <div class="chip low" style="margin-top:10px;">{{ goal_error }}</div>
-  {% endif %}
-
-  <form method="post" action="/metrics/body_weight/goal" style="margin-top:12px;">
-    <div style="display:flex;flex-wrap:wrap;gap:14px;align-items:center;font-size:13.5px;color:var(--text2);">
-      {% for k in goal_kinds %}
-      <label style="display:inline-flex;align-items:center;gap:5px;">
-        <input type="radio" name="kind" value="{{ k }}"
-               {{ 'checked' if goal and goal.kind == k or (not goal and k == 'none') }}>
-        {{ k|capitalize }}
-      </label>
-      {% endfor %}
-    </div>
-    <div style="display:flex;gap:10px;align-items:center;margin-top:10px;">
-      <input class="num" type="number" name="target" step="0.05" min="0.05" max="3"
-             placeholder="lb/wk" value="{{ goal.target|abs if goal and goal.target else '' }}"
-             style="width:110px;padding:7px 10px;border-radius:10px;border:1px solid var(--border);background:var(--card);color:var(--text);">
-      <button type="submit"
-              style="padding:7px 16px;border-radius:10px;border:1px solid var(--border);background:rgba(255,255,255,.06);color:var(--text);font-weight:600;font-size:13.5px;">Save</button>
-    </div>
-    <div class="muted" style="font-size:12px;margin-top:8px;">Target applies to bulk and cut; ignored otherwise.</div>
-  </form>
-</div>
-{% endif %}
-
 <div class="grid c2" style="margin-top:14px;">
   <div class="card"><div class="stat-label">7-day avg</div><div class="stat-med num">{{ detail.avg7|fmt_num(m.digits) }}{% if detail.avg7 is not none %}<span class="unit"> {{ m.unit }}</span>{% endif %}</div></div>
   <div class="card"><div class="stat-label">7-day range</div><div class="stat-med num">{% if detail.lo is not none %}{{ detail.lo|fmt_num(m.digits) }}–{{ detail.hi|fmt_num(m.digits) }}{% else %}—{% endif %}</div></div>
@@ -133,5 +77,59 @@
   </div>
   {% endfor %}
 </div>
+{% endif %}
+{% if metric == 'body_weight' %}
+{# Goal phase editor. Collapsed by default and last on the page: the verdict
+   already rides the header chip, so this is only opened to change something.
+   Plain <details> + form, no JS. #}
+{% set gs = goal_status %}
+<details class="card goal" style="margin-top:22px;">
+  <summary style="cursor:pointer;list-style:none;display:flex;align-items:center;gap:10px;">
+    <span class="stat-label" style="flex:1;">Goal</span>
+    <span class="num" style="color:var(--text);font-size:14px;font-weight:600;">
+      {%- if goal and goal.kind != 'none' -%}
+        {{ goal.kind|capitalize }}{% if goal.target %} · {{ goal.target|abs|fmt_num(2) }} lb/wk{% endif %}
+      {%- else -%}
+        No goal
+      {%- endif -%}
+    </span>
+    <span class="muted" style="font-size:16px;line-height:1;">⌄</span>
+  </summary>
+
+  {% if goal and goal.kind != 'none' %}
+  <div class="muted" style="font-size:13px;margin-top:10px;">
+    Since {{ goal.started_on|fmt_date }}.
+    {% if gs.pending %}
+    Needs ~2 weeks in this phase before the rate above means anything.
+    {% else %}
+    On target is {{ gs.lo|fmt_num(2) }} to {{ gs.hi|fmt_num(2) }} lb/wk.
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {% if goal_error %}
+  <div class="chip low" style="margin-top:10px;">{{ goal_error }}</div>
+  {% endif %}
+
+  <form method="post" action="/metrics/body_weight/goal" style="margin-top:12px;">
+    <div style="display:flex;flex-wrap:wrap;gap:14px;align-items:center;font-size:13.5px;color:var(--text2);">
+      {% for k in goal_kinds %}
+      <label style="display:inline-flex;align-items:center;gap:5px;">
+        <input type="radio" name="kind" value="{{ k }}"
+               {{ 'checked' if goal and goal.kind == k or (not goal and k == 'none') }}>
+        {{ k|capitalize }}
+      </label>
+      {% endfor %}
+    </div>
+    <div style="display:flex;gap:10px;align-items:center;margin-top:10px;">
+      {# Hidden by CSS for maintain/none -- those kinds take no rate. #}
+      <input class="num goal-target" type="number" name="target" step="0.05" min="0.05" max="3"
+             placeholder="lb/wk" value="{{ goal.target|abs if goal and goal.target else '' }}"
+             style="width:110px;padding:7px 10px;border-radius:10px;border:1px solid var(--border);background:var(--card);color:var(--text);">
+      <button type="submit"
+              style="padding:7px 16px;border-radius:10px;border:1px solid var(--border);background:rgba(255,255,255,.06);color:var(--text);font-weight:600;font-size:13.5px;">Save</button>
+    </div>
+  </form>
+</details>
 {% endif %}
 {% endblock %}

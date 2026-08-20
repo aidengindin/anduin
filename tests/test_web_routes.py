@@ -189,7 +189,7 @@ def _weight_detail():
             "per_week": 9.99, "spark": "", "status": None}
     return {"meta": queries.METRICS["body_weight"], "metric": "body_weight",
             "card": card, "avg7": 181.0, "lo": 180.0, "hi": 182.0,
-            "recent": [], "status": None}
+            "recent": [{"d": _dt(2026, 8, 19), "v": 181.2}], "status": None}
 
 
 @pytest.fixture()
@@ -319,7 +319,7 @@ def test_the_header_rate_is_the_phase_clipped_one_and_appears_once(weight_page, 
     header = r.text.split(">Goal<")[0]
     assert "0.44" in header, "header must carry the phase-clipped rate"
     assert r.text.count("0.44") == 1, "the goal card must not repeat it"
-    assert "9.99" not in r.text, "the unclipped card trend must not be rendered"
+    assert "9.99 lb/wk" not in r.text, "the unclipped card trend must not be rendered"
 
 
 def test_a_pending_phase_quotes_no_rate_anywhere(client, monkeypatch):
@@ -337,7 +337,7 @@ def test_a_pending_phase_quotes_no_rate_anywhere(client, monkeypatch):
     )
     r = client.get("/metrics/body_weight")
     assert "0.95" not in r.text, "an untrustworthy rate is never quoted"
-    assert "9.99" not in r.text, "nor is the unclipped fallback"
+    assert "9.99 lb/wk" not in r.text, "nor is the unclipped fallback"
     assert "pending" in r.text.lower()
 
 
@@ -351,3 +351,50 @@ def test_other_body_metrics_keep_their_own_trend_chip(client, monkeypatch):
     r = client.get("/metrics/muscle_mass")
     assert r.status_code == 200
     assert "0.3" in r.text and "lb/wk" in r.text
+
+
+def test_the_goal_editor_sits_at_the_bottom_and_starts_collapsed(weight_page, monkeypatch):
+    monkeypatch.setattr(
+        goals, "current_goal",
+        lambda conn, uid: {"kind": "bulk", "target": 0.4, "started_on": date(2026, 7, 1)},
+    )
+    r = weight_page.get("/metrics/body_weight")
+    assert "<details" in r.text and "<details open" not in r.text
+    # Below the readings list, not between the chart and the stats.
+    assert r.text.index("<details") > r.text.index("Recent readings")
+
+
+def test_rate_and_verdict_are_one_chip(weight_page, monkeypatch):
+    monkeypatch.setattr(
+        goals, "current_goal",
+        lambda conn, uid: {"kind": "bulk", "target": 0.4, "started_on": date(2026, 7, 1)},
+    )
+    r = weight_page.get("/metrics/body_weight")
+    assert "0.44 lb/wk · on target" in r.text
+    assert r.text.count("on target") == 1, "the goal section must not repeat the verdict"
+
+
+def test_the_collapsed_summary_names_the_current_phase(weight_page, monkeypatch):
+    monkeypatch.setattr(
+        goals, "current_goal",
+        lambda conn, uid: {"kind": "bulk", "target": 0.4, "started_on": date(2026, 7, 1)},
+    )
+    r = weight_page.get("/metrics/body_weight")
+    summary = r.text[r.text.index("<summary"):r.text.index("</summary>")]
+    assert "Bulk" in summary and "0.40" in summary
+
+
+def test_the_summary_says_so_when_no_goal_is_set(weight_page, monkeypatch):
+    monkeypatch.setattr(goals, "current_goal", lambda conn, uid: None)
+    r = weight_page.get("/metrics/body_weight")
+    summary = r.text[r.text.index("<summary"):r.text.index("</summary>")]
+    assert "No goal" in summary
+
+
+def test_the_target_field_is_marked_for_the_untargeted_kinds_rule(weight_page, monkeypatch):
+    """Maintain and none take no rate, so the field hides itself. Done in CSS
+    (:has on the checked radio) rather than JS, so it reacts to the radio
+    immediately without a round trip."""
+    monkeypatch.setattr(goals, "current_goal", lambda conn, uid: None)
+    r = weight_page.get("/metrics/body_weight")
+    assert "goal-target" in r.text
