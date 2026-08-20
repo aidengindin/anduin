@@ -57,24 +57,27 @@ METRICS: dict[str, dict[str, Any]] = {
         "color": "#6dd0b0", "view": "canonical.body_weight",
         "date_col": "valid_from", "value_col": "value", "digits": 1, "better": "low",
         "trend": "body_composition_trend", "display_scale": 2.2046226218,
+        "min_bucket": "1 day",
     },
     "body_fat_ratio": {
         "label": "Body fat", "desc": "Withings", "unit": "%", "group": "body",
         "color": "#6dd0b0", "view": "canonical.body_fat_ratio",
         "date_col": "valid_from", "value_col": "value", "digits": 1, "better": "low",
-        "trend": "body_composition_trend",
+        "trend": "body_composition_trend", "min_bucket": "1 day",
     },
     "muscle_mass": {
         "label": "Muscle mass", "desc": "Withings", "unit": "lb", "group": "body",
         "color": "#6dd0b0", "view": "canonical.muscle_mass",
         "date_col": "valid_from", "value_col": "value", "digits": 1, "better": "high",
         "trend": "body_composition_trend", "display_scale": 2.2046226218,
+        "min_bucket": "1 day",
     },
     "fat_free_mass": {
         "label": "Fat-free mass", "desc": "Withings", "unit": "lb", "group": "body",
         "color": "#6dd0b0", "view": "canonical.fat_free_mass",
         "date_col": "valid_from", "value_col": "value", "digits": 1, "better": "high",
         "trend": "body_composition_trend", "display_scale": 2.2046226218,
+        "min_bucket": "1 day",
     },
     "steps": {
         "label": "Steps", "desc": "Daily total", "unit": "", "group": "activity",
@@ -121,6 +124,24 @@ METRICS: dict[str, dict[str, Any]] = {
 
 SLEEP_GOAL_MIN = 480  # 8h reference for the ring
 
+# Rate tolerance for a weight goal: on-target means within +/-50% of the target.
+# A maintain phase targets 0, which would collapse that to zero width, so it
+# gets a fixed band instead. Both are constants, not user-tunable.
+GOAL_TOLERANCE_FRACTION = 0.5
+MAINTAIN_TOLERANCE_LB_PER_WEEK = 0.25
+
+# The rolling corridor asks "where should I be today, given where I was four
+# weeks ago" -- a constant-width ribbon rather than a wedge that widens without
+# bound over a long phase. See the design doc.
+CORRIDOR_WEEKS = 4
+
+# Below either of these the fit is noise, and the UI says so instead of quoting
+# a rate.
+GOAL_MIN_READINGS = 5
+GOAL_MIN_SPAN_DAYS = 10
+
+_BUCKETS = ["1 minute", "1 hour", "1 day"]
+
 
 def _as_utc(d: date | datetime) -> datetime:
     if isinstance(d, datetime):
@@ -128,13 +149,23 @@ def _as_utc(d: date | datetime) -> datetime:
     return datetime(d.year, d.month, d.day, tzinfo=timezone.utc)
 
 
-def _bucket_for_range(start: datetime, end: datetime) -> str:
+def _bucket_for_range(start: datetime, end: datetime, floor: str | None = None) -> str:
+    """Bucket width for a range, never finer than ``floor``.
+
+    A once-a-morning weigh-in has nothing to say at hourly resolution, and the
+    rolling-average overlays only align when both series share a daily grain --
+    so body-composition metrics set a floor rather than changing the widths
+    every other metric gets."""
     span_days = (end - start).total_seconds() / 86400.0
     if span_days <= 2:
-        return "1 minute"
-    if span_days <= 60:
-        return "1 hour"
-    return "1 day"
+        bucket = "1 minute"
+    elif span_days <= 60:
+        bucket = "1 hour"
+    else:
+        bucket = "1 day"
+    if floor is not None and _BUCKETS.index(floor) > _BUCKETS.index(bucket):
+        return floor
+    return bucket
 
 
 # --- generic per-metric helpers -------------------------------------------
@@ -236,16 +267,16 @@ def _card(conn: Connection, key: str, spark_days: int = 14) -> dict[str, Any] | 
 def _body_slope_per_week(conn: Connection, metric: str) -> float | None:
     with conn.cursor() as cur:
         cur.execute("""
-            SELECT slope_per_week
+            SELECT smoothed_slope_per_week
             FROM derived.body_composition_trend
             WHERE metric = %(metric)s
             ORDER BY valid_from DESC
             LIMIT 1
         """, {"metric": metric})
         r = cur.fetchone()
-    if not r or r["slope_per_week"] is None:
+    if not r or r["smoothed_slope_per_week"] is None:
         return None
-    return float(r["slope_per_week"]) * METRICS[metric].get("display_scale", 1.0)
+    return float(r["smoothed_slope_per_week"]) * METRICS[metric].get("display_scale", 1.0)
 
 
 def _metric_status(conn: Connection, status: str | None) -> str | None:
@@ -371,11 +402,18 @@ def metric_index(conn: Connection) -> dict[str, list[dict[str, Any]]]:
 # --- metric detail (1d) ----------------------------------------------------
 
 
-def metric_series(conn: Connection, metric: str, start: date | datetime, end: date | datetime) -> dict[str, Any]:
-    """Bucketed avg/min/max series for one metric over [start, end)."""
+def metric_series(
+    conn: Connection, metric: str, start: date | datetime, end: date | datetime,
+    goal: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Bucketed avg/min/max series for one metric over [start, end).
+
+    Body-composition metrics additionally carry their 7- and 30-day rolling
+    averages on each point, and body weight carries the goal corridor when a
+    phase is in effect."""
     m = METRICS[metric]
     start_dt, end_dt = _as_utc(start), _as_utc(end)
-    bucket = _bucket_for_range(start_dt, end_dt)
+    bucket = _bucket_for_range(start_dt, end_dt, m.get("min_bucket"))
     dcol = m["date_col"]
     sql = f"""
         SELECT time_bucket(%(bucket)s::interval, {dcol}::timestamptz) AS t,
@@ -397,6 +435,13 @@ def metric_series(conn: Connection, metric: str, start: date | datetime, end: da
         for r in rows
     ]
     out = {"metric": metric, "label": m["label"], "unit": m["unit"], "bucket": bucket, "points": points}
+    if m.get("trend") == "body_composition_trend":
+        _attach_rolling_averages(conn, m, metric, points, bucket, start_dt, end_dt)
+        lo, hi = _goal_corridor(points, goal)
+        if lo:
+            out["goal"] = {
+                "kind": goal["kind"], "target": goal["target"], "lo": lo, "hi": hi,
+            }
     if band := m.get("band"):
         bdcol = band["date_col"]
         band_sql = f"""
@@ -417,6 +462,126 @@ def metric_series(conn: Connection, metric: str, start: date | datetime, end: da
             for r in band_rows
             if r["lo"] is not None and r["hi"] is not None
         ]
+    return out
+
+
+def _attach_rolling_averages(
+    conn: Connection, m: dict, metric: str, points: list[dict[str, Any]],
+    bucket: str, start_dt: datetime, end_dt: datetime,
+) -> None:
+    """Merge trailing 7d/30d means onto ``points`` in place, keyed by bucket.
+
+    Both series share the daily grain the metric's ``min_bucket`` floor
+    guarantees, so the join on bucket start is exact; a day the trend view has
+    no row for simply stays None."""
+    sql = """
+        SELECT time_bucket(%(bucket)s::interval, valid_from) AS t,
+               avg(avg_7d) AS avg7, avg(avg_30d) AS avg30
+        FROM derived.body_composition_trend
+        WHERE metric = %(metric)s
+          AND valid_from >= %(start)s AND valid_from < %(end)s
+        GROUP BY t ORDER BY t
+    """
+    with conn.cursor() as cur:
+        cur.execute(sql, {"bucket": bucket, "metric": metric,
+                          "start": start_dt, "end": end_dt})
+        rows = cur.fetchall()
+    scale = m.get("display_scale", 1.0)
+    by_t = {int(r["t"].timestamp()): r for r in rows}
+    for p in points:
+        r = by_t.get(p["t"])
+        p["avg7"] = float(r["avg7"]) * scale if r and r["avg7"] is not None else None
+        p["avg30"] = float(r["avg30"]) * scale if r and r["avg30"] is not None else None
+
+
+def _goal_corridor(
+    points: list[dict[str, Any]], goal: dict[str, Any] | None
+) -> tuple[list[float | None], list[float | None]]:
+    """Rolling target ribbon, aligned to ``points``.
+
+    For each day *t* the band is the 7-day average from four weeks earlier plus
+    the target rate over those four weeks, widened by the tolerance. Because it
+    re-anchors every day the width is constant, and a bad fortnight stops
+    haunting the chart once intake is corrected -- unlike a wedge pinned to the
+    phase start, which both widens without bound and permanently offsets after
+    any early deviation.
+
+    Blank until four weeks into the phase: before that the anchor would predate
+    the goal, and there is nothing honest to draw."""
+    if goal is None or goal["kind"] == "none":
+        return [], []
+    target = goal["target"] or 0.0
+    tol = abs(target) * GOAL_TOLERANCE_FRACTION if target else MAINTAIN_TOLERANCE_LB_PER_WEEK
+    span = CORRIDOR_WEEKS * 7 * 86400
+    phase_start = _as_utc(goal["started_on"]).timestamp()
+    anchors = {p["t"]: p.get("avg7") for p in points}
+    lo: list[float | None] = []
+    hi: list[float | None] = []
+    for p in points:
+        anchor_t = p["t"] - span
+        anchor = anchors.get(anchor_t)
+        if anchor is None or anchor_t < phase_start:
+            lo.append(None)
+            hi.append(None)
+            continue
+        lo.append(anchor + (target - tol) * CORRIDOR_WEEKS)
+        hi.append(anchor + (target + tol) * CORRIDOR_WEEKS)
+    return lo, hi
+
+
+def weight_goal_status(conn: Connection, goal: dict[str, Any] | None) -> dict[str, Any]:
+    """Current smoothed rate of weight change, judged against the goal.
+
+    The fit runs over the trailing 21 days of the *smoothed* series, clipped so
+    it never reaches back before the phase started -- a rate computed partly
+    from the previous phase would describe neither. Clipping is why this cannot
+    live in the view: the window depends on a goal row the view cannot see."""
+    with conn.cursor() as cur:
+        cur.execute("""
+            WITH w AS (
+                SELECT valid_from, avg_7d
+                FROM derived.body_composition_trend
+                WHERE metric = 'body_weight'
+                  AND avg_7d IS NOT NULL
+                  AND valid_from >= greatest(
+                          now() - interval '21 days',
+                          coalesce(%(phase_start)s::date, '-infinity'::date)::timestamptz)
+            )
+            SELECT regr_slope(avg_7d, extract(epoch FROM valid_from)) * 604800.0 AS slope,
+                   count(*) AS n,
+                   extract(epoch FROM (max(valid_from) - min(valid_from))) / 86400.0 AS days
+            FROM w
+        """, {"phase_start": goal["started_on"] if goal else None})
+        row = cur.fetchone() or {}
+
+    scale = METRICS["body_weight"]["display_scale"]
+    slope = row.get("slope")
+    rate = float(slope) * scale if slope is not None else None
+    n = int(row.get("n") or 0)
+    days = float(row.get("days") or 0.0)
+    pending = rate is None or n < GOAL_MIN_READINGS or days < GOAL_MIN_SPAN_DAYS
+
+    target = (goal["target"] if goal else None) or 0.0
+    tol = abs(target) * GOAL_TOLERANCE_FRACTION if target else MAINTAIN_TOLERANCE_LB_PER_WEEK
+    out: dict[str, Any] = {
+        "kind": goal["kind"] if goal else None,
+        "target": goal["target"] if goal else None,
+        "lo": target - tol, "hi": target + tol,
+        "rate": rate, "n": n, "days": days, "pending": pending, "verdict": None,
+    }
+    if pending or goal is None or goal["kind"] == "none":
+        return out
+
+    # Judge along the direction of the goal, so a cut that is losing too slowly
+    # reads "too slow" rather than "too fast" for being numerically higher.
+    direction = -1.0 if target < 0 else 1.0
+    progress = rate * direction
+    if progress > abs(target) + tol:
+        out["verdict"] = "too_fast"
+    elif progress < abs(target) - tol:
+        out["verdict"] = "too_slow"
+    else:
+        out["verdict"] = "on_target"
     return out
 
 
