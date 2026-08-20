@@ -75,10 +75,10 @@ def test_workout_calories_work_conversion_is_metabolic_not_mechanical():
 
 
 def test_goal_phases_are_append_only_with_a_tombstone_kind():
-    """0024's table is the phase history the corridor and verdict read. The
+    """0025's table is the phase history the corridor and verdict read. The
     'none' kind ends a phase without starting a targeted one; the paired CHECK
     is what keeps a bulk from being saved with no target."""
-    text = _sql("0024_weight_goals.sql")
+    text = _sql("0025_weight_goals.sql")
     assert "CREATE TABLE IF NOT EXISTS identity.goals" in text
     assert "'bulk','cut','maintain','none'" in text.replace(", ", ",")
     assert "UNIQUE (user_id, started_on)" in text
@@ -86,9 +86,9 @@ def test_goal_phases_are_append_only_with_a_tombstone_kind():
 
 
 def test_trend_view_fits_the_smoothed_series_not_raw_readings():
-    """The whole point of 0024's view change: regressing avg_7d instead of raw
+    """The whole point of 0025's view change: regressing avg_7d instead of raw
     weight is what stops the per-week number lurching with each weigh-in."""
-    text = _sql("0024_weight_goals.sql")
+    text = _sql("0025_weight_goals.sql")
     assert "CREATE OR REPLACE VIEW derived.body_composition_trend" in text
     assert "regr_slope(avg_7d" in text
     assert "avg_30d" in text
@@ -99,5 +99,5 @@ def test_smoothed_fit_uses_a_28_day_window():
     written with on accuracy, stability AND time-to-settle -- a shorter window
     is too noisy to converge at all. Pinned by name so a stray `INTERVAL '28
     days'` elsewhere in the file cannot satisfy this by accident."""
-    text = " ".join(_sql("0024_weight_goals.sql").split())
+    text = " ".join(_sql("0025_weight_goals.sql").split())
     assert "w_smooth AS (PARTITION BY metric ORDER BY valid_from RANGE BETWEEN INTERVAL '28 days' PRECEDING AND CURRENT ROW)" in text

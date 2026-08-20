@@ -49,8 +49,8 @@ METRICS: dict[str, dict[str, Any]] = {
     "skin_temp": {
         "label": "Skin temperature", "desc": "Nightly baseline deviation", "unit": "°C Δ",
         "group": "recovery",
-        "color": "#59b6d6", "view": "canonical.skin_temp",
-        "date_col": "valid_from", "value_col": "value", "digits": 1, "better": None,
+        "color": "#59b6d6", "view": "canonical.skin_temp_daily",
+        "date_col": "local_date", "value_col": "variation_c", "digits": 1, "better": None,
     },
     "body_weight": {
         "label": "Body weight", "desc": "Withings", "unit": "lb", "group": "body",
@@ -83,37 +83,37 @@ METRICS: dict[str, dict[str, Any]] = {
         "label": "Steps", "desc": "Daily total", "unit": "", "group": "activity",
         "color": "#3fd6a0", "view": "canonical.activity_daily",
         "date_col": "local_date", "value_col": "value", "digits": 0, "better": "high",
-        "where": "metric = 'steps' AND kind = 'total'",
+        "where": "metric = 'steps' AND kind = 'total'", "zero_fill": True,
     },
     "steps_neat": {
         "label": "NEAT steps", "desc": "Outside recorded workouts", "unit": "",
         "group": "activity", "color": "#57b88f", "view": "canonical.activity_daily",
         "date_col": "local_date", "value_col": "value", "digits": 0, "better": "high",
-        "where": "metric = 'steps' AND kind = 'neat'",
+        "where": "metric = 'steps' AND kind = 'neat'", "zero_fill": True,
     },
     "steps_workout": {
         "label": "Exercise steps", "desc": "Recorded workouts", "unit": "",
         "group": "activity", "color": "#72e6b9", "view": "canonical.activity_daily",
         "date_col": "local_date", "value_col": "value", "digits": 0, "better": "high",
-        "where": "metric = 'steps' AND kind = 'workout'",
+        "where": "metric = 'steps' AND kind = 'workout'", "zero_fill": True,
     },
     "active_calories": {
         "label": "Active calories", "desc": "Daily total", "unit": "kcal",
         "group": "activity", "color": "#f0a63c", "view": "canonical.activity_daily",
         "date_col": "local_date", "value_col": "value", "digits": 0, "better": "high",
-        "where": "metric = 'active_calories' AND kind = 'total'",
+        "where": "metric = 'active_calories' AND kind = 'total'", "zero_fill": True,
     },
     "active_calories_neat": {
         "label": "NEAT calories", "desc": "Outside recorded workouts", "unit": "kcal",
         "group": "activity", "color": "#c68d42", "view": "canonical.activity_daily",
         "date_col": "local_date", "value_col": "value", "digits": 0, "better": "high",
-        "where": "metric = 'active_calories' AND kind = 'neat'",
+        "where": "metric = 'active_calories' AND kind = 'neat'", "zero_fill": True,
     },
     "active_calories_workout": {
         "label": "Exercise calories", "desc": "Recorded workouts", "unit": "kcal",
         "group": "activity", "color": "#f6bd62", "view": "canonical.activity_daily",
         "date_col": "local_date", "value_col": "value", "digits": 0, "better": "high",
-        "where": "metric = 'active_calories' AND kind = 'workout'",
+        "where": "metric = 'active_calories' AND kind = 'workout'", "zero_fill": True,
     },
     "form": {
         "label": "Form (TSB)", "desc": "Fitness − fatigue", "unit": "", "group": "activity",
@@ -187,6 +187,47 @@ def _value_expr(m: dict) -> str:
     return f"({value} * {scale})" if scale is not None else value
 
 
+# --- zero-fill for counter metrics ----------------------------------------
+# Steps and calories are counters: a day with no row means the day happened and
+# nothing was recorded — zero — not "unmeasured". Left unfilled, every query
+# below just takes the newest row it can find, so a week with a single run
+# reported that run's step count as *today's* exercise steps and drew a chart
+# with the empty days closed up. Point-in-time metrics (weight, body fat, HRV,
+# skin temp) are deliberately NOT filled: a day with no weigh-in is not a
+# zero-pound day, and carrying the last reading forward is the right answer
+# there.
+#
+# The fill horizon is the newest day the metric's *view* holds any row for,
+# ignoring the metric's own `where` — that filtered max is exactly the stale
+# value being corrected, while the unfiltered one tracks the last day the
+# rollup covers. current_date is not used: activity_daily is keyed to the
+# wearer's local calendar and ingest lags, so filling to the server's today
+# would invent zero days ahead of the data.
+
+
+def _fill_horizon(m: dict) -> str:
+    return f"(SELECT max({m['date_col']})::date FROM {m['view']})"
+
+
+def _filled_days_sql(m: dict) -> str:
+    """(d, v) for the trailing ``%(days)s`` days ending at the fill horizon,
+    oldest→newest, with days that have no row as 0."""
+    return f"""
+        SELECT g.d::date AS d, coalesce(s.v, 0) AS v
+        FROM generate_series(
+                 {_fill_horizon(m)} - make_interval(days => %(days)s - 1),
+                 {_fill_horizon(m)},
+                 interval '1 day') AS g(d)
+        LEFT JOIN (
+            SELECT {m['date_col']}::date AS d, avg({_value_expr(m)}) AS v
+            FROM {m['view']}
+            WHERE {m['value_col']} IS NOT NULL {_where(m)}
+            GROUP BY 1
+        ) s ON s.d = g.d::date
+        ORDER BY g.d
+    """
+
+
 def _spark_points(values: list[float], width: int = 60, height: int = 24, pad: int = 3) -> str:
     """SVG polyline points for a sparkline. Flat line if all-equal / single point."""
     if not values:
@@ -205,35 +246,43 @@ def _spark_points(values: list[float], width: int = 60, height: int = 24, pad: i
 
 def _daily_values(conn: Connection, m: dict, days: int = 14) -> list[float]:
     """Trailing per-day values for a sparkline, oldest→newest."""
-    sql = f"""
-        SELECT avg({_value_expr(m)}) AS v
-        FROM {m['view']}
-        WHERE {m['date_col']} >= (now() - make_interval(days => %(days)s)) {_where(m)}
-        GROUP BY date_trunc('day', {m['date_col']})
-        ORDER BY date_trunc('day', {m['date_col']})
-    """
+    if m.get("zero_fill"):
+        sql = f"SELECT v FROM ({_filled_days_sql(m)}) q"
+    else:
+        sql = f"""
+            SELECT avg({_value_expr(m)}) AS v
+            FROM {m['view']}
+            WHERE {m['date_col']} >= (now() - make_interval(days => %(days)s)) {_where(m)}
+            GROUP BY date_trunc('day', {m['date_col']})
+            ORDER BY date_trunc('day', {m['date_col']})
+        """
     with conn.cursor() as cur:
         cur.execute(sql, {"days": days})
         return [float(r["v"]) for r in cur.fetchall() if r["v"] is not None]
 
 
 def _latest(conn: Connection, m: dict) -> dict[str, Any] | None:
-    """Latest value + a 7-day mean of the preceding readings, for a delta."""
-    sql = f"""
-        WITH s AS (
+    """Latest value + a mean of the preceding readings, for a delta.
+
+    For counter metrics the window is the last 30 *days* (zeros included), not
+    the last 30 rows — otherwise the "latest" reading is whichever day last had
+    activity, which is the bug this fills against."""
+    inner = _filled_days_sql(m) if m.get("zero_fill") else f"""
             SELECT {m['date_col']} AS d, {_value_expr(m)} AS v
             FROM {m['view']}
             WHERE {m['value_col']} IS NOT NULL {_where(m)}
             ORDER BY {m['date_col']} DESC
             LIMIT 30
-        )
+    """
+    sql = f"""
+        WITH s AS ({inner})
         SELECT
             (SELECT v FROM s ORDER BY d DESC LIMIT 1) AS latest,
             (SELECT d FROM s ORDER BY d DESC LIMIT 1) AS latest_at,
             (SELECT avg(v) FROM (SELECT v FROM s ORDER BY d DESC OFFSET 1) q) AS baseline
     """
     with conn.cursor() as cur:
-        cur.execute(sql)
+        cur.execute(sql, {"days": 30})
         r = cur.fetchone()
     if not r or r["latest"] is None:
         return None
@@ -419,9 +468,14 @@ def metric_series(
     phase is in effect."""
     m = METRICS[metric]
     start_dt, end_dt = _as_utc(start), _as_utc(end)
-    bucket = _bucket_for_range(start_dt, end_dt, m.get("min_bucket"))
+    # Two reasons a bucket must not go finer than a day, and they compose:
+    # zero-filling an hourly bucket would emit 23 phantom zeros per real day for
+    # a counter, and the rolling-average overlays only align with the readings
+    # when both share a daily grain.
+    floor = "1 day" if m.get("zero_fill") else m.get("min_bucket")
+    bucket = _bucket_for_range(start_dt, end_dt, floor)
     dcol = m["date_col"]
-    sql = f"""
+    agg = f"""
         SELECT time_bucket(%(bucket)s::interval, {dcol}::timestamptz) AS t,
                avg({_value_expr(m)}) AS avg,
                min({_value_expr(m)}) AS min,
@@ -430,6 +484,28 @@ def metric_series(
         WHERE {dcol}::timestamptz >= %(start)s AND {dcol}::timestamptz < %(end)s {_where(m)}
         GROUP BY t ORDER BY t
     """
+    if m.get("zero_fill"):
+        # One bucket per day in range, capped at the fill horizon so the chart
+        # stops at the last ingested day rather than trailing off into zeros.
+        sql = f"""
+            WITH h AS (SELECT {_fill_horizon(m)} AS d),
+            b AS (
+                SELECT generate_series(
+                    time_bucket(%(bucket)s::interval, %(start)s::timestamptz),
+                    time_bucket(%(bucket)s::interval,
+                                least(%(end)s::timestamptz - interval '1 microsecond',
+                                      h.d::timestamptz)),
+                    %(bucket)s::interval) AS t
+                FROM h WHERE h.d IS NOT NULL  -- least() ignores NULL; an empty
+                                              -- view must draw nothing, not zeros
+            ), s AS ({agg})
+            SELECT b.t, coalesce(s.avg, 0) AS avg,
+                   coalesce(s.min, 0) AS min, coalesce(s.max, 0) AS max
+            FROM b LEFT JOIN s ON s.t = b.t
+            ORDER BY b.t
+        """
+    else:
+        sql = agg
     with conn.cursor() as cur:
         cur.execute(sql, {"bucket": bucket, "start": start_dt, "end": end_dt})
         rows = cur.fetchall()
@@ -638,22 +714,30 @@ def metric_detail(conn: Connection, metric: str) -> dict[str, Any]:
     m = METRICS[metric]
     card = _card(conn, metric, spark_days=30)
     # 7-day / range stats.
-    sql = f"""
-        SELECT avg(v) AS avg7, min(v) AS lo, max(v) AS hi FROM (
-            SELECT {_value_expr(m)} AS v FROM {m['view']}
+    if m.get("zero_fill"):
+        # "Last 7 / last 8" mean calendar days, zeros included — not the last
+        # 7 days that happened to have activity.
+        sql = f"SELECT avg(v) AS avg7, min(v) AS lo, max(v) AS hi FROM ({_filled_days_sql(m)}) q"
+        recent_sql = f"SELECT d, v FROM ({_filled_days_sql(m)}) q ORDER BY d DESC"
+        stats_params, recent_params = {"days": 7}, {"days": 8}
+    else:
+        sql = f"""
+            SELECT avg(v) AS avg7, min(v) AS lo, max(v) AS hi FROM (
+                SELECT {_value_expr(m)} AS v FROM {m['view']}
+                WHERE {m['value_col']} IS NOT NULL {_where(m)}
+                ORDER BY {m['date_col']} DESC LIMIT 7
+            ) q
+        """
+        recent_sql = f"""
+            SELECT {m['date_col']} AS d, {_value_expr(m)} AS v FROM {m['view']}
             WHERE {m['value_col']} IS NOT NULL {_where(m)}
-            ORDER BY {m['date_col']} DESC LIMIT 7
-        ) q
-    """
-    recent_sql = f"""
-        SELECT {m['date_col']} AS d, {_value_expr(m)} AS v FROM {m['view']}
-        WHERE {m['value_col']} IS NOT NULL {_where(m)}
-        ORDER BY {m['date_col']} DESC LIMIT 8
-    """
+            ORDER BY {m['date_col']} DESC LIMIT 8
+        """
+        stats_params = recent_params = None
     with conn.cursor() as cur:
-        cur.execute(sql)
+        cur.execute(sql, stats_params)
         stats = cur.fetchone() or {}
-        cur.execute(recent_sql)
+        cur.execute(recent_sql, recent_params)
         recent = cur.fetchall()
     lo = float(stats["lo"]) if stats.get("lo") is not None else None
     hi = float(stats["hi"]) if stats.get("hi") is not None else None

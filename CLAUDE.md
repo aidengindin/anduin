@@ -95,12 +95,32 @@ workout that carves a window **must** contribute a calorie number or that energy
 vanishes from `total_energy` — which is exactly what happened to every liftosaur
 session before 0023 (55–180 kcal each).
 
+### Counters are zero-filled; point-in-time metrics are not
+
+`web/queries.py` marks steps/calories metrics `zero_fill: True`. For a counter, a
+day with no row means the day happened and nothing was recorded — **zero** — so
+every read path (card, sparkline, chart, detail table) generates the calendar
+days and coalesces misses to 0. Without it the UI just takes the newest row it
+can find, and a week with one run reports that run's step count as *today's*
+exercise steps while the chart closes up the empty days.
+
+Weight, body composition, HRV, RHR, SpO2 and skin temp are deliberately left
+unfilled: a day with no weigh-in is not a zero-pound day, and carrying the last
+reading forward is the correct reading there.
+
+The fill horizon is `max(date_col)` over the metric's **view**, ignoring the
+metric's own `where` — that filtered max is exactly the stale value being
+corrected. `current_date` is not used: `activity_daily` is keyed to the wearer's
+local calendar and ingest lags, so filling to the server's today would invent
+zero days ahead of the data. Counter charts also pin the bucket to `1 day`,
+since zero-filling an hourly bucket over a daily rollup would emit 23 phantom
+zeros per real day.
 ### Weight trend: smooth first, then fit
 
 `derived.body_composition_trend` exposes two slopes and the UI shows the second:
 
 - `slope_per_week` — 28d OLS on **raw** readings (the original, from 0013).
-- `smoothed_slope_per_week` — 28d OLS on **`avg_7d`** (0024). This is what
+- `smoothed_slope_per_week` — 28d OLS on **`avg_7d`** (0025). This is what
   `_body_slope_per_week` reads.
 
 Day-to-day weight swings of 1–2 lb sit on top of a bulk signal near 0.3–0.5
@@ -154,6 +174,15 @@ chip measured recent rate. Don't reintroduce it.
   date (see migrations 0018/0019). `derived.hrv_status` / `derived.spo2_status`
   read those nightly views, not `raw.daily_metrics`. `resting_heart_rate` and
   `respiratory_rate` daily rollups *are* populated, so those stay as-is.
+- **There is no `skin-temperature` data type.** The Fitbit-era metric is exposed
+  only as `daily-sleep-temperature-derivations`: a nightly mean of the wrist skin
+  sensor (`nightlyTemperatureCelsius`) plus the trailing 30-day median it is
+  judged against (`baselineTemperatureCelsius`) — the pair the Fitbit app plots
+  as "skin temperature variation". Both are stored as daily metrics
+  (`skin_temp_nightly` / `skin_temp_baseline` / `skin_temp_rel_stddev_30d`) and
+  `canonical.skin_temp_daily` subtracts them into `variation_c`, which is NULL
+  for roughly the first 30 nights on a device (no baseline yet). The older
+  sample-grained `canonical.skin_temp` view holds pre-v4 history only.
 - **SpO2 has a `50.0` sentinel** for dropped/invalid pulse-ox reads. Filter
   `value >= 70` before aggregating or it corrupts the avg/min and false-trips the
   desaturation flag.

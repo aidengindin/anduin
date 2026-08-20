@@ -32,7 +32,7 @@ Explicitly **out**: calorie-intake tracking, goal-aware anything on the home
 screen, goals for metrics other than body weight, editing or deleting past
 phases.
 
-## 1. Schema (migration 0024)
+## 1. Schema (migration 0025)
 
 ```sql
 CREATE TABLE IF NOT EXISTS identity.goals (
@@ -280,7 +280,7 @@ without `:has()`.
 Against a scratch PostgreSQL 16 (TimescaleDB's `time_bucket` shimmed) seeded
 with 120 days of synthetic morning weigh-ins:
 
-- Migration 0024 applies, and re-applies, cleanly.
+- Migration 0025 applies, and re-applies, cleanly.
 - The phase-clipped query agrees with the view exactly once the window is full
   (both +0.787 lb/wk on the same data), confirming the clipping adds no skew.
 - The corridor's width is constant to floating-point across every drawn day, and
