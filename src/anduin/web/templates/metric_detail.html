@@ -14,7 +14,16 @@
   {% if c %}
   <div class="num" style="color:var(--text);font-weight:700;font-size:56px;line-height:1;margin-top:6px;">{{ c.value|fmt_num(c.digits) }}<span style="font-size:22px;color:var(--muted);font-weight:500;"> {{ m.unit }}</span></div>
   {% if detail.status %}<div class="chip {{ detail.status }}" style="margin-top:12px;">{{ detail.status }}</div>{% endif %}
-  {% if c.per_week is defined and c.per_week is not none %}
+  {% if goal_status is defined %}
+  {# One rate for the page. Coloured by the verdict when there is a goal to
+     judge against, neutral when there isn't. #}
+  {% set vchip = {'on_target': 'balanced', 'too_fast': 'high', 'too_slow': 'low'} %}
+  {% if goal_status.pending %}
+  <div class="chip pending" style="margin-top:12px;">trend pending</div>
+  {% elif goal_status.rate is not none %}
+  <div class="chip {{ vchip.get(goal_status.verdict, 'balanced') }}" style="margin-top:12px;">{{ '↓' if goal_status.rate < 0 else '↑' }} {{ goal_status.rate|abs|fmt_num(2) }} {{ m.unit }}/wk</div>
+  {% endif %}
+  {% elif c.per_week is defined and c.per_week is not none %}
   <div class="chip {{ 'balanced' if c.dir == 'down' else 'high' if c.dir == 'up' else 'pending' }}" style="margin-top:12px;">{{ '↓' if c.per_week < 0 else '↑' }} {{ c.per_week|abs|fmt_num(c.digits) }} {{ m.unit }}/wk</div>
   {% elif c.delta is not none %}
     {% if metric == 'form' %}
@@ -59,12 +68,8 @@
 <div class="card" style="margin-top:14px;">
   <div style="display:flex;align-items:center;gap:10px;">
     <div class="stat-label" style="flex:1;">Goal</div>
-    {% if goal and goal.kind != 'none' %}
-      {% if gs.pending %}
-      <span class="chip pending">needs ~2 weeks in this phase</span>
-      {% elif gs.verdict %}
-      <span class="chip {{ verdict_chip[gs.verdict] }}">{{ verdict_text[gs.verdict] }}</span>
-      {% endif %}
+    {% if goal and goal.kind != 'none' and gs.verdict %}
+    <span class="chip {{ verdict_chip[gs.verdict] }}">{{ verdict_text[gs.verdict] }}</span>
     {% endif %}
   </div>
 
@@ -74,12 +79,13 @@
     {%- if goal.target %} · target {{ goal.target|abs|fmt_num(2) }} lb/wk{% endif %}
     <span class="muted" style="font-weight:500;"> since {{ goal.started_on|fmt_date }}</span>
   </div>
-  {% if gs.rate is not none and not gs.pending %}
   <div class="muted" style="font-size:13px;margin-top:4px;">
-    Currently {{ '+' if gs.rate >= 0 else '−' }}{{ gs.rate|abs|fmt_num(2) }} lb/wk
-    (on target: {{ gs.lo|fmt_num(2) }} to {{ gs.hi|fmt_num(2) }})
+    {% if gs.pending %}
+    Needs ~2 weeks in this phase before the rate above means anything.
+    {% else %}
+    On target is {{ gs.lo|fmt_num(2) }} to {{ gs.hi|fmt_num(2) }} lb/wk.
+    {% endif %}
   </div>
-  {% endif %}
   {% else %}
   <div class="muted" style="font-size:13px;margin-top:6px;">No goal set.</div>
   {% endif %}

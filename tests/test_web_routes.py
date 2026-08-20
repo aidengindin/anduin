@@ -186,7 +186,7 @@ def _weight_detail():
     card = {"key": "body_weight", "label": "Body weight", "desc": "Withings",
             "unit": "lb", "color": "#6dd0b0", "group": "body", "digits": 1,
             "value": 181.2, "at": _dt(2026, 8, 19), "delta": 0.3, "dir": "up",
-            "per_week": 0.4, "spark": "", "status": None}
+            "per_week": 9.99, "spark": "", "status": None}
     return {"meta": queries.METRICS["body_weight"], "metric": "body_weight",
             "card": card, "avg7": 181.0, "lo": 180.0, "hi": 182.0,
             "recent": [], "status": None}
@@ -305,3 +305,49 @@ def test_chart_key_shows_the_corridor_once_the_phase_is_old_enough(weight_page, 
     )
     r = weight_page.get("/metrics/body_weight")
     assert "goal corridor" in r.text
+
+
+def test_the_header_rate_is_the_phase_clipped_one_and_appears_once(weight_page, monkeypatch):
+    """One rate on the page, not two. The header used to show an unclipped
+    trend while the card showed the phase-clipped one, so during a young phase
+    they disagreed outright."""
+    monkeypatch.setattr(
+        goals, "current_goal",
+        lambda conn, uid: {"kind": "bulk", "target": 0.4, "started_on": date(2026, 7, 1)},
+    )
+    r = weight_page.get("/metrics/body_weight")
+    header = r.text.split(">Goal<")[0]
+    assert "0.44" in header, "header must carry the phase-clipped rate"
+    assert r.text.count("0.44") == 1, "the goal card must not repeat it"
+    assert "9.99" not in r.text, "the unclipped card trend must not be rendered"
+
+
+def test_a_pending_phase_quotes_no_rate_anywhere(client, monkeypatch):
+    monkeypatch.setattr(queries, "metric_detail", lambda conn, m: _weight_detail())
+    monkeypatch.setattr(
+        queries, "weight_goal_status",
+        lambda conn, goal: {"kind": "bulk", "target": 0.4, "lo": 0.2, "hi": 0.6,
+                            "rate": -0.95, "n": 2, "days": 1.0,
+                            "pending": True, "verdict": None},
+    )
+    monkeypatch.setattr(
+        goals, "current_goal",
+        lambda conn, uid: {"kind": "bulk", "target": 0.4,
+                           "started_on": datetime.now(timezone.utc).date()},
+    )
+    r = client.get("/metrics/body_weight")
+    assert "0.95" not in r.text, "an untrustworthy rate is never quoted"
+    assert "9.99" not in r.text, "nor is the unclipped fallback"
+    assert "pending" in r.text.lower()
+
+
+def test_other_body_metrics_keep_their_own_trend_chip(client, monkeypatch):
+    """Muscle mass has no goal, but still gets the smoothed per-week trend."""
+    detail = _weight_detail()
+    detail["meta"] = queries.METRICS["muscle_mass"]
+    detail["metric"] = "muscle_mass"
+    detail["card"]["per_week"] = 0.3
+    monkeypatch.setattr(queries, "metric_detail", lambda conn, m: detail)
+    r = client.get("/metrics/muscle_mass")
+    assert r.status_code == 200
+    assert "0.3" in r.text and "lb/wk" in r.text

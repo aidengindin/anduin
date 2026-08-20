@@ -231,6 +231,18 @@ Matching the patterns already in `tests/`:
   as `test_web_queries.py`'s module docstring describes.
 
 
+## One rate per page
+
+The header stat and the goal card must not quote different numbers. The header
+chip therefore reads from `weight_goal_status` too — the same phase-clipped rate,
+coloured by the verdict — and the card states the phase, the target and the
+on-target band without repeating the figure. When the phase is too young to
+judge, the header says `trend pending` and no rate is quoted anywhere; a number
+that isn't trustworthy shouldn't be on screen at all.
+
+Other body-composition metrics keep their own unclipped `per_week` chip: they
+have no goal to clip to.
+
 ## Verified
 
 Against a scratch PostgreSQL 16 (TimescaleDB's `time_bucket` shimmed) seeded
