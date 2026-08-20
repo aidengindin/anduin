@@ -73,13 +73,20 @@ WITH s AS (
                 RANGE BETWEEN INTERVAL '28 days' PRECEDING AND CURRENT ROW)
 )
 SELECT
+    -- ORDER MATTERS. The first six columns are 0013's view, unchanged and in
+    -- place: CREATE OR REPLACE VIEW can only *append*, never rename or reorder.
+    -- avg_30d reads more naturally beside avg_7d, but putting it there fails on
+    -- any database holding the old definition -- while succeeding on a fresh
+    -- one, which is exactly how it got shipped once:
+    --   ERROR: cannot change name of view column "n_28d" to "avg_30d"
+    -- New columns go at the end. tests/test_migrations.py enforces this.
     metric,
     valid_from,
     value,
     avg_7d,
-    avg_30d,
     n_28d,
     slope_per_week,
+    avg_30d,
     regr_slope(avg_7d, extract(epoch FROM valid_from)) OVER w_smooth * 604800.0
         AS smoothed_slope_per_week
 FROM smoothed

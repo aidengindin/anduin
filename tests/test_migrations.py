@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from importlib import resources
 
 
@@ -101,3 +102,59 @@ def test_smoothed_fit_uses_a_28_day_window():
     days'` elsewhere in the file cannot satisfy this by accident."""
     text = " ".join(_sql("0025_weight_goals.sql").split())
     assert "w_smooth AS (PARTITION BY metric ORDER BY valid_from RANGE BETWEEN INTERVAL '28 days' PRECEDING AND CURRENT ROW)" in text
+
+
+def _outer_select_columns(view_body: str) -> list[str] | None:
+    """Column names of a view body's outermost SELECT list."""
+    body = re.sub(r"--[^\n]*", "", view_body)
+    blocks = list(re.finditer(r"^SELECT\b(.*?)^FROM\b", body, re.M | re.S))
+    if not blocks:
+        return None
+    items, depth, cur = [], 0, ""
+    for ch in blocks[-1].group(1):
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+        if ch == "," and depth == 0:
+            items.append(cur)
+            cur = ""
+        else:
+            cur += ch
+    items.append(cur)
+    names = []
+    for item in items:
+        item = " ".join(item.split())
+        if not item:
+            continue
+        alias = re.search(r"\bAS\s+([A-Za-z_]\w*)$", item, re.I)
+        names.append(alias.group(1) if alias else item.split()[-1])
+    return names
+
+
+def test_replaced_views_only_append_columns():
+    """CREATE OR REPLACE VIEW can only *append* columns -- Postgres refuses to
+    rename, reorder or drop them. So a view redefined by a later migration must
+    keep every earlier column in the same position.
+
+    This is not theoretical. 0025 first shipped with `avg_30d` inserted beside
+    `avg_7d`, which applied fine to a fresh database and failed on the live one
+    with `cannot change name of view column "n_28d" to "avg_30d"`.
+    """
+    seen: dict[str, tuple[str, list[str]]] = {}
+    files = resources.files("anduin.migrations")
+    for name in sorted(p.name for p in files.iterdir() if p.name.endswith(".sql")):
+        text = (files / name).read_text(encoding="utf-8")
+        for m in re.finditer(r"CREATE OR REPLACE VIEW\s+([\w.]+)\s+AS(.*?);\s*$",
+                             text, re.S | re.M):
+            view, cols = m.group(1), _outer_select_columns(m.group(2))
+            if cols is None:
+                continue
+            if view in seen:
+                before_file, before = seen[view]
+                assert cols[:len(before)] == before, (
+                    f"{name}: {view} reorders or renames columns defined in "
+                    f"{before_file}.\n  was: {before}\n  now: {cols}\n"
+                    "CREATE OR REPLACE VIEW can only append; put new columns last."
+                )
+            seen[view] = (name, cols)
