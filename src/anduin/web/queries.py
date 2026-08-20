@@ -135,6 +135,12 @@ MAINTAIN_TOLERANCE_LB_PER_WEEK = 0.25
 # bound over a long phase. See the design doc.
 CORRIDOR_WEEKS = 4
 
+# The anchor is a mean over +/-3 days rather than one day's avg_7d. A single
+# day passes its own wobble straight into the ribbon -- a dip four weeks ago
+# became a dip in today's corridor. The window is centred, so it removes that
+# without shifting the four-week offset, which would bias the whole band.
+ANCHOR_SMOOTH_DAYS = 3
+
 # Below either of these the fit is noise, and the UI says so instead of quoting
 # a rate.
 GOAL_MIN_READINGS = 5
@@ -474,7 +480,8 @@ def _attach_rolling_averages(
     """Merge trailing 7d/30d means onto ``points`` in place; return every
     ``avg_7d`` fetched, keyed by bucket start, for the corridor to anchor on.
 
-    The query deliberately reaches back ``CORRIDOR_WEEKS`` before the range:
+    The query deliberately reaches back ``CORRIDOR_WEEKS`` (plus the anchor
+    smoothing window) before the range:
     each corridor day anchors four weeks behind itself, so anchors for the
     early part of the range predate it. Looking them up in the visible points
     alone left all but the last few days of a one-month chart blank.
@@ -490,7 +497,7 @@ def _attach_rolling_averages(
           AND valid_from >= %(start)s AND valid_from < %(end)s
         GROUP BY t ORDER BY t
     """
-    lookback = timedelta(weeks=CORRIDOR_WEEKS)
+    lookback = timedelta(weeks=CORRIDOR_WEEKS, days=ANCHOR_SMOOTH_DAYS)
     with conn.cursor() as cur:
         cur.execute(sql, {"bucket": bucket, "metric": metric,
                           "start": start_dt - lookback, "end": end_dt})
@@ -513,8 +520,10 @@ def _goal_corridor(
 ) -> tuple[list[float | None], list[float | None]]:
     """Rolling target ribbon, aligned to ``points``.
 
-    For each day *t* the band is the 7-day average from four weeks earlier plus
-    the target rate over those four weeks, widened by the tolerance. Because it
+    For each day *t* the band is the 7-day average from four weeks earlier --
+    itself averaged over a +/-3 day window, so one wobbly morning four weeks ago
+    does not bend today's target -- plus the target rate over those four weeks,
+    widened by the tolerance. Because it
     re-anchors every day the width is constant, and a bad fortnight stops
     haunting the chart once intake is corrected -- unlike a wedge pinned to the
     phase start, which both widens without bound and permanently offsets after
@@ -530,13 +539,18 @@ def _goal_corridor(
     phase_start = _as_utc(goal["started_on"]).timestamp()
     lo: list[float | None] = []
     hi: list[float | None] = []
+    day = 86400
+    offsets = range(-ANCHOR_SMOOTH_DAYS, ANCHOR_SMOOTH_DAYS + 1)
     for p in points:
         anchor_t = p["t"] - span
-        anchor = anchors.get(anchor_t)
-        if anchor is None or anchor_t < phase_start:
+        window = [anchors.get(anchor_t + k * day) for k in offsets]
+        # The whole window must sit inside the phase: averaging across the
+        # boundary would mix in the weights the previous phase was aiming at.
+        if any(v is None for v in window) or anchor_t - ANCHOR_SMOOTH_DAYS * day < phase_start:
             lo.append(None)
             hi.append(None)
             continue
+        anchor = sum(window) / len(window)
         lo.append(anchor + (target - tol) * CORRIDOR_WEEKS)
         hi.append(anchor + (target + tol) * CORRIDOR_WEEKS)
     return lo, hi

@@ -126,8 +126,9 @@ Two things must keep agreeing, or the page contradicts itself:
 1. The verdict chip fits the trailing 28 days **clipped to the phase start** —
    which is why it lives in `queries.weight_goal_status` and not in the view: a
    view cannot see a goal row.
-2. The chart corridor re-anchors daily on `avg_7d` from four weeks back, so its
-   width is **constant**.
+2. The chart corridor re-anchors daily on `avg_7d` from four weeks back — as a
+   centred 7-day mean, so one wobbly morning doesn't bend the target — and its
+   width is therefore **constant**.
 
 Both therefore describe recent rate. An earlier design pinned the corridor to
 the phase start and fanned it forward; that version widened without bound (8 lb

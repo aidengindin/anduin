@@ -288,15 +288,15 @@ def _anchors(points):
 
 
 def test_corridor_anchors_four_weeks_back_at_the_target_rate():
-    pts = _pts(29)
+    pts = _pts(32)
     lo, hi = queries._goal_corridor(pts, _anchors(pts), _goal(target=0.4, started=date(2026, 6, 1)))
     # 180 + (0.4 -/+ 0.2) * 4 weeks
-    assert lo[28] == pytest.approx(180.8)
-    assert hi[28] == pytest.approx(182.4)
+    assert lo[31] == pytest.approx(180.8)
+    assert hi[31] == pytest.approx(182.4)
 
 
 def test_corridor_is_blank_for_the_first_four_weeks_of_a_phase():
-    pts = _pts(29)
+    pts = _pts(32)
     lo, _ = queries._goal_corridor(pts, _anchors(pts), _goal(target=0.4, started=date(2026, 6, 1)))
     assert all(v is None for v in lo[:28])
 
@@ -314,10 +314,10 @@ def test_corridor_is_absent_before_the_phase_start_date():
 
 
 def test_maintain_corridor_is_a_flat_band_around_the_anchor():
-    pts = _pts(29)
+    pts = _pts(32)
     lo, hi = queries._goal_corridor(pts, _anchors(pts), _goal(kind="maintain", target=None,
                                                started=date(2026, 6, 1)))
-    assert lo[28] == pytest.approx(179.0) and hi[28] == pytest.approx(181.0)
+    assert lo[31] == pytest.approx(179.0) and hi[31] == pytest.approx(181.0)
 
 
 def test_no_corridor_without_a_goal():
@@ -374,10 +374,9 @@ def test_corridor_spans_the_whole_range_using_anchors_from_before_it():
     points = [{"t": _dt(2026, 8, 1), "avg": 84.0, "min": 84.0, "max": 84.0},
               {"t": _dt(2026, 8, 2), "avg": 84.1, "min": 84.1, "max": 84.1}]
     # The overlay query reaches back before the range: 7/4 and 7/5 anchor 8/1 and 8/2.
-    overlay = [{"t": _dt(2026, 7, 4), "avg7": 81.0, "avg30": 80.5},
-               {"t": _dt(2026, 7, 5), "avg7": 81.1, "avg30": 80.6},
-               {"t": _dt(2026, 8, 1), "avg7": 84.0, "avg30": 83.0},
-               {"t": _dt(2026, 8, 2), "avg7": 84.1, "avg30": 83.1}]
+    overlay = [{"t": _dt(2026, 7, d), "avg7": 81.0, "avg30": 80.5} for d in range(1, 10)]
+    overlay += [{"t": _dt(2026, 8, 1), "avg7": 84.0, "avg30": 83.0},
+                {"t": _dt(2026, 8, 2), "avg7": 84.1, "avg30": 83.1}]
     goal = {"kind": "bulk", "target": 0.4, "started_on": date(2026, 6, 1)}
     out = queries.metric_series(FakeConn([points, overlay]), "body_weight",
                                 date(2026, 8, 1), date(2026, 8, 3), goal)
@@ -390,4 +389,39 @@ def test_the_overlay_query_reaches_back_before_the_range_start():
     queries.metric_series(conn, "body_weight", date(2026, 8, 1), date(2026, 8, 3),
                           {"kind": "bulk", "target": 0.4, "started_on": date(2026, 6, 1)})
     _, params = conn._cursor.executed[1]
-    assert params["start"].date() == date(2026, 7, 4)  # 28 days before the range
+    # 28 days back for the anchor, plus 3 more for the window around it.
+    assert params["start"].date() == date(2026, 7, 1)
+
+
+def test_the_anchor_is_a_seven_day_mean_not_a_single_days_reading():
+    """A single anchor day passes its own wobble straight into the ribbon: a dip
+    in avg_7d four weeks ago became a dip in today's corridor. Averaging +/-3
+    days around the anchor removes that without shifting the four-week offset,
+    which would bias the whole band."""
+    pts = _pts(32)
+    # Anchor window for the last point is indices 0..6. The centre day (index 3)
+    # is a deliberate outlier, so a mean and a single reading cannot agree.
+    for i, v in enumerate([181.0, 181.0, 181.0, 170.0, 181.0, 181.0, 181.0]):
+        pts[i]["avg7"] = v
+    lo, hi = queries._goal_corridor(pts, _anchors(pts), _goal(target=0.4, started=date(2026, 6, 1)))
+    mean = (181.0 * 6 + 170.0) / 7
+    assert lo[31] == pytest.approx(mean + 0.8)   # not 170.0 + 0.8
+    assert hi[31] == pytest.approx(mean + 2.4)
+
+
+def test_a_gap_in_the_anchor_window_leaves_the_day_blank():
+    pts = _pts(32)
+    del pts[2]
+    lo, _ = queries._goal_corridor(pts, _anchors(pts), _goal(target=0.4, started=date(2026, 6, 1)))
+    assert lo[-1] is None
+
+
+def test_the_anchor_window_never_reaches_back_before_the_phase():
+    """Averaging across the phase boundary would mix in the previous phase's
+    weights, so the whole window must sit inside the phase."""
+    pts = _pts(40)
+    # Phase starts at index 2, so the first drawable day needs its window at 2+.
+    goal = _goal(target=0.4, started=date(2026, 7, 3))
+    lo, _ = queries._goal_corridor(pts, _anchors(pts), goal)
+    assert lo[31] is None   # window would be indices 0..6, straddling the start
+    assert lo[33] is not None  # window indices 2..8, fully inside

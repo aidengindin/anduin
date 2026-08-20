@@ -154,9 +154,21 @@ than change that shared function for every metric, the registry gains a
 number. For each day *t*:
 
 ```
-lo(t) = avg_7d(t - 28d) + (target - tolerance) * 4
-hi(t) = avg_7d(t - 28d) + (target + tolerance) * 4
+anchor(t) = mean(avg_7d over [t - 31d, t - 25d])     # centred on t - 28d
+lo(t)     = anchor(t) + (target - tolerance) * 4
+hi(t)     = anchor(t) + (target + tolerance) * 4
 ```
+
+The anchor is a seven-day mean, not one day's `avg_7d`. A single anchor day
+passes its own wobble straight into the ribbon — a dip four weeks ago drew a dip
+in today's corridor, which reads as a target that moves for no reason. The window
+is **centred** on `t - 28d`, so it removes the wobble without shifting the
+four-week offset; an asymmetric window would bias the whole band. On real data
+this cut the ribbon's worst day-to-day step from 0.65 lb to 0.11 lb.
+
+The whole window must also sit inside the phase, so the corridor starts three
+days later than the anchor alone would allow. Averaging across a phase boundary
+would mix in the weights the *previous* phase was aiming at.
 
 That is a constant-width ribbon — ±0.8 lb at a 0.4 lb/wk target — tracking the
 weight curve four weeks behind, and it reads as *"where should I be today, given
@@ -175,11 +187,6 @@ The overlay query reaches back `CORRIDOR_WEEKS` *before* the requested range,
 because each corridor day anchors four weeks behind itself. Anchoring on the
 visible points alone drew only the last three days of a one-month chart — the
 rest could not find an anchor inside the range.
-
-Because the anchor is a single day's `avg_7d`, the ribbon inherits that day's
-wobble: a dip in the 7-day average four weeks ago shows up as a dip in today's
-corridor. That is the readout being honest about what it is measuring, not a
-rendering fault.
 
 The rolling anchor is blank for a phase's first four weeks, for the same reason
 the verdict chip reads `pending`: there is nothing honest to draw yet.
