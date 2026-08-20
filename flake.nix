@@ -36,6 +36,9 @@
             uvicorn
             jinja2
             psycopg-pool
+            # form parsing for the goal editor (Starlette requires it for any
+            # request.form(), urlencoded included)
+            python-multipart
           ];
 
           nativeCheckInputs = with pkgs.python3Packages; [
@@ -78,6 +81,7 @@
                   uvicorn
                   jinja2
                   psycopg-pool
+                  python-multipart
                   pytest
                   respx
                   freezegun

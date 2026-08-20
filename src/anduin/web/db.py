@@ -16,7 +16,9 @@ def make_pool(dsn: str) -> ConnectionPool:
     """Create (but do not open) a small read-only pool.
 
     ``dict_row`` on every connection so query functions get name-keyed rows;
-    ``autocommit`` since the UI only reads.
+    ``autocommit`` -- the UI is almost entirely reads, and its one write (the
+    weight goal in ``web/goals.py``) is a single statement that needs no
+    transaction of its own.
     """
     return ConnectionPool(
         dsn,

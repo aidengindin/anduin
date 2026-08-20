@@ -79,7 +79,7 @@ def test_imperial_body_metrics_convert_values_and_trends():
     assert weight["unit"] == "lb"
     assert queries._value_expr(weight) == "(value * 2.2046226218)"
 
-    conn = FakeConn([{"slope_per_week": 1.0}])
+    conn = FakeConn([{"smoothed_slope_per_week": 1.0}])
     assert queries._body_slope_per_week(conn, "body_weight") == pytest.approx(2.2046226218)
 
 
@@ -209,6 +209,235 @@ def test_strength_sql_orders_warmups_before_working_sets():
     assert "ORDER BY e.exercise_idx, s.is_warmup DESC, s.set_index" in sql
 
 
+# --- weight goal tracking --------------------------------------------------
+
+
+def _goal(kind="bulk", target=0.4, started=date(2026, 7, 1)):
+    return {"kind": kind, "target": target, "started_on": started}
+
+
+def test_weight_goal_status_converts_the_smoothed_slope_to_pounds():
+    conn = FakeConn([{"slope": 1.0, "n": 12, "days": 21.0}])
+    out = queries.weight_goal_status(conn, _goal())
+    assert out["rate"] == pytest.approx(2.2046226218)
+
+
+def test_on_target_when_the_rate_is_inside_the_tolerance_band():
+    conn = FakeConn([{"slope": 0.4 / 2.2046226218, "n": 12, "days": 21.0}])
+    out = queries.weight_goal_status(conn, _goal(target=0.4))
+    assert out["verdict"] == "on_target"
+    assert (out["lo"], out["hi"]) == (pytest.approx(0.2), pytest.approx(0.6))
+
+
+def test_gaining_faster_than_the_band_reads_too_fast():
+    conn = FakeConn([{"slope": 1.0 / 2.2046226218, "n": 12, "days": 21.0}])
+    assert queries.weight_goal_status(conn, _goal(target=0.4))["verdict"] == "too_fast"
+
+
+def test_gaining_slower_than_the_band_reads_too_slow():
+    conn = FakeConn([{"slope": 0.05 / 2.2046226218, "n": 12, "days": 21.0}])
+    assert queries.weight_goal_status(conn, _goal(target=0.4))["verdict"] == "too_slow"
+
+
+def test_a_cut_losing_too_slowly_is_not_mistaken_for_too_fast():
+    # Target -1.0 lb/wk, band [-1.5, -0.5]; -0.2 is numerically above the band
+    # but behind schedule, because the direction of progress is downward.
+    conn = FakeConn([{"slope": -0.2 / 2.2046226218, "n": 12, "days": 21.0}])
+    assert queries.weight_goal_status(conn, _goal(kind="cut", target=-1.0))["verdict"] == "too_slow"
+
+
+def test_a_cut_losing_faster_than_intended_reads_too_fast():
+    conn = FakeConn([{"slope": -2.0 / 2.2046226218, "n": 12, "days": 21.0}])
+    assert queries.weight_goal_status(conn, _goal(kind="cut", target=-1.0))["verdict"] == "too_fast"
+
+
+def test_maintain_uses_a_fixed_band_instead_of_a_collapsed_one():
+    conn = FakeConn([{"slope": 0.1 / 2.2046226218, "n": 12, "days": 21.0}])
+    out = queries.weight_goal_status(conn, _goal(kind="maintain", target=None))
+    assert (out["lo"], out["hi"]) == (pytest.approx(-0.25), pytest.approx(0.25))
+    assert out["verdict"] == "on_target"
+
+
+@pytest.mark.parametrize(
+    "row",
+    [
+        {"slope": 0.2, "n": 4, "days": 21.0},   # too few readings
+        {"slope": 0.2, "n": 12, "days": 6.0},   # too short a span
+        {"slope": None, "n": 0, "days": 0.0},   # nothing at all
+    ],
+)
+def test_a_thin_window_is_pending_rather_than_a_wild_rate(row):
+    out = queries.weight_goal_status(FakeConn([row]), _goal())
+    assert out["pending"] is True and out["verdict"] is None
+
+
+def test_the_fit_window_never_reaches_back_before_the_phase_started():
+    conn = FakeConn([{"slope": 0.2, "n": 12, "days": 21.0}])
+    queries.weight_goal_status(conn, _goal(started=date(2026, 8, 10)))
+    _, params = conn._cursor.executed[0]
+    assert params["phase_start"] == date(2026, 8, 10)
+
+
+def test_a_none_tombstone_reports_the_rate_without_a_verdict():
+    conn = FakeConn([{"slope": 0.2, "n": 12, "days": 21.0}])
+    out = queries.weight_goal_status(conn, _goal(kind="none", target=None))
+    assert out["rate"] is not None and out["verdict"] is None
+
+
+# --- goal corridor ---------------------------------------------------------
+
+_DAY = 86400
+_T0 = int(_dt(2026, 7, 1).timestamp())
+
+
+def _pts(n, avg7=180.0):
+    return [{"t": _T0 + i * _DAY, "avg7": avg7} for i in range(n)]
+
+
+def _anchors(points):
+    return {p["t"]: p["avg7"] for p in points}
+
+
+def test_corridor_anchors_four_weeks_back_at_the_target_rate():
+    pts = _pts(32)
+    lo, hi = queries._goal_corridor(pts, _anchors(pts), _goal(target=0.4, started=date(2026, 6, 1)))
+    # 180 + (0.4 -/+ 0.2) * 4 weeks
+    assert lo[31] == pytest.approx(180.8)
+    assert hi[31] == pytest.approx(182.4)
+
+
+def test_corridor_is_blank_for_the_first_four_weeks_of_a_phase():
+    pts = _pts(32)
+    lo, _ = queries._goal_corridor(pts, _anchors(pts), _goal(target=0.4, started=date(2026, 6, 1)))
+    assert all(v is None for v in lo[:28])
+
+
+def test_corridor_width_does_not_grow_with_phase_length():
+    pts = _pts(200)
+    lo, hi = queries._goal_corridor(pts, _anchors(pts), _goal(target=0.4, started=date(2026, 1, 1)))
+    assert hi[40] - lo[40] == pytest.approx(hi[199] - lo[199])
+
+
+def test_corridor_is_absent_before_the_phase_start_date():
+    pts = _pts(60)
+    lo, _ = queries._goal_corridor(pts, _anchors(pts), _goal(target=0.4, started=date(2026, 8, 1)))
+    assert lo[40] is None
+
+
+def test_maintain_corridor_is_a_flat_band_around_the_anchor():
+    pts = _pts(32)
+    lo, hi = queries._goal_corridor(pts, _anchors(pts), _goal(kind="maintain", target=None,
+                                               started=date(2026, 6, 1)))
+    assert lo[31] == pytest.approx(179.0) and hi[31] == pytest.approx(181.0)
+
+
+def test_no_corridor_without_a_goal():
+    assert queries._goal_corridor(_pts(29), _anchors(_pts(29)), None) == ([], [])
+
+
+def test_no_corridor_for_a_tombstoned_phase():
+    goal = _goal(kind="none", target=None, started=date(2026, 6, 1))
+    assert queries._goal_corridor(_pts(29), _anchors(_pts(29)), goal) == ([], [])
+
+
+def test_corridor_skips_days_whose_anchor_is_missing():
+    pts = [p for i, p in enumerate(_pts(29)) if i != 0]
+    lo, _ = queries._goal_corridor(pts, _anchors(pts), _goal(target=0.4, started=date(2026, 6, 1)))
+    assert lo[-1] is None
+
+
+# --- chart overlays --------------------------------------------------------
+
+
+def test_body_weight_is_bucketed_daily_even_over_a_short_range():
+    conn = FakeConn([[], []])
+    out = queries.metric_series(conn, "body_weight", date(2026, 7, 1), date(2026, 7, 8))
+    assert out["bucket"] == "1 day"
+
+
+def test_rolling_averages_are_aligned_onto_the_reading_points():
+    points = [{"t": _dt(2026, 7, 1), "avg": 81.6, "min": 81.6, "max": 81.6},
+              {"t": _dt(2026, 7, 2), "avg": 81.7, "min": 81.7, "max": 81.7}]
+    overlay = [{"t": _dt(2026, 7, 1), "avg7": 81.5, "avg30": 81.0}]
+    out = queries.metric_series(FakeConn([points, overlay]), "body_weight",
+                                date(2026, 7, 1), date(2026, 7, 3))
+    assert out["points"][0]["avg7"] == pytest.approx(81.5 * 2.2046226218)
+    assert out["points"][0]["avg30"] == pytest.approx(81.0 * 2.2046226218)
+    assert out["points"][1]["avg7"] is None
+
+
+def test_a_corridor_with_nothing_drawable_is_omitted_entirely():
+    """A phase younger than four weeks has no anchor yet, so every day is None.
+    Serializing that would light up the chart legend for a ribbon that is not
+    there."""
+    points = [{"t": _dt(2026, 7, 1), "avg": 81.6, "min": 81.6, "max": 81.6}]
+    overlay = [{"t": _dt(2026, 7, 1), "avg7": 81.5, "avg30": 81.0}]
+    goal = {"kind": "bulk", "target": 0.4, "started_on": date(2026, 6, 25)}
+    out = queries.metric_series(FakeConn([points, overlay]), "body_weight",
+                                date(2026, 7, 1), date(2026, 7, 2), goal)
+    assert "goal" not in out
+
+
+def test_corridor_spans_the_whole_range_using_anchors_from_before_it():
+    """The anchor lives four weeks behind the day it draws, so a one-month
+    chart needs trend rows from before the range start. Looking anchors up in
+    the visible points alone left 28 of every 31 days blank."""
+    points = [{"t": _dt(2026, 8, 1), "avg": 84.0, "min": 84.0, "max": 84.0},
+              {"t": _dt(2026, 8, 2), "avg": 84.1, "min": 84.1, "max": 84.1}]
+    # The overlay query reaches back before the range: 7/4 and 7/5 anchor 8/1 and 8/2.
+    overlay = [{"t": _dt(2026, 7, d), "avg7": 81.0, "avg30": 80.5} for d in range(1, 10)]
+    overlay += [{"t": _dt(2026, 8, 1), "avg7": 84.0, "avg30": 83.0},
+                {"t": _dt(2026, 8, 2), "avg7": 84.1, "avg30": 83.1}]
+    goal = {"kind": "bulk", "target": 0.4, "started_on": date(2026, 6, 1)}
+    out = queries.metric_series(FakeConn([points, overlay]), "body_weight",
+                                date(2026, 8, 1), date(2026, 8, 3), goal)
+    assert all(v is not None for v in out["goal"]["lo"]), "every day in range should draw"
+    assert out["goal"]["lo"][0] == pytest.approx(81.0 * 2.2046226218 + (0.4 - 0.2) * 4)
+
+
+def test_the_overlay_query_reaches_back_before_the_range_start():
+    conn = FakeConn([[], []])
+    queries.metric_series(conn, "body_weight", date(2026, 8, 1), date(2026, 8, 3),
+                          {"kind": "bulk", "target": 0.4, "started_on": date(2026, 6, 1)})
+    _, params = conn._cursor.executed[1]
+    # 28 days back for the anchor, plus 3 more for the window around it.
+    assert params["start"].date() == date(2026, 7, 1)
+
+
+def test_the_anchor_is_a_seven_day_mean_not_a_single_days_reading():
+    """A single anchor day passes its own wobble straight into the ribbon: a dip
+    in avg_7d four weeks ago became a dip in today's corridor. Averaging +/-3
+    days around the anchor removes that without shifting the four-week offset,
+    which would bias the whole band."""
+    pts = _pts(32)
+    # Anchor window for the last point is indices 0..6. The centre day (index 3)
+    # is a deliberate outlier, so a mean and a single reading cannot agree.
+    for i, v in enumerate([181.0, 181.0, 181.0, 170.0, 181.0, 181.0, 181.0]):
+        pts[i]["avg7"] = v
+    lo, hi = queries._goal_corridor(pts, _anchors(pts), _goal(target=0.4, started=date(2026, 6, 1)))
+    mean = (181.0 * 6 + 170.0) / 7
+    assert lo[31] == pytest.approx(mean + 0.8)   # not 170.0 + 0.8
+    assert hi[31] == pytest.approx(mean + 2.4)
+
+
+def test_a_gap_in_the_anchor_window_leaves_the_day_blank():
+    pts = _pts(32)
+    del pts[2]
+    lo, _ = queries._goal_corridor(pts, _anchors(pts), _goal(target=0.4, started=date(2026, 6, 1)))
+    assert lo[-1] is None
+
+
+def test_the_anchor_window_never_reaches_back_before_the_phase():
+    """Averaging across the phase boundary would mix in the previous phase's
+    weights, so the whole window must sit inside the phase."""
+    pts = _pts(40)
+    # Phase starts at index 2, so the first drawable day needs its window at 2+.
+    goal = _goal(target=0.4, started=date(2026, 7, 3))
+    lo, _ = queries._goal_corridor(pts, _anchors(pts), goal)
+    assert lo[31] is None   # window would be indices 0..6, straddling the start
+    assert lo[33] is not None  # window indices 2..8, fully inside
+
+
 # --- zero-fill: counters vs point-in-time metrics ---------------------------
 
 COUNTERS = ["steps", "steps_neat", "steps_workout",
@@ -251,7 +480,9 @@ def test_counter_series_zero_fills_buckets_up_to_the_horizon():
 
 
 def test_point_in_time_series_keeps_gaps():
-    conn = FakeConn([[]])
+    # Two result sets: the readings, then the rolling-average overlay that
+    # body-composition metrics also fetch.
+    conn = FakeConn([[], []])
     queries.metric_series(conn, "body_weight", date(2026, 7, 1), date(2026, 7, 15))
     sql, _ = conn._cursor.executed[0]
     assert "generate_series" not in sql

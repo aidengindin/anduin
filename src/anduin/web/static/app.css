@@ -211,3 +211,11 @@ a.row:hover { background: var(--card2); }
 .set { display: flex; align-items: center; gap: 10px; padding: 7px 16px; color: var(--text2); font-size: 12.5px; border-top: 1px solid rgba(255,255,255,.04); }
 .set .si { width: 22px; color: var(--dim); }
 .set .sv { flex: 1; }
+
+/* Goal editor. The target rate applies only to bulk and cut, so the field
+   hides itself when an untargeted kind is checked -- :has() on the live radio
+   state, so it reacts instantly without any JavaScript on this page. */
+.goal > summary::-webkit-details-marker { display: none; }
+.goal[open] > summary .muted:last-child { transform: rotate(180deg); display: inline-block; }
+.goal form:has(input[value="maintain"]:checked) .goal-target,
+.goal form:has(input[value="none"]:checked) .goal-target { display: none; }

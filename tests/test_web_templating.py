@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from anduin.sources.liftohistory import _to_kg
 from anduin.web.templating import _fmt_lb
 
@@ -22,3 +24,12 @@ def test_fmt_lb_drops_trailing_zero_and_handles_none():
 
 def test_fmt_lb_groups_thousands():
     assert _fmt_lb(_to_kg(1000.0, "lb")) == "1,000"
+
+
+def test_untargeted_goal_kinds_hide_the_target_field_in_css():
+    """No JS on this page: the rule keys off which radio is checked."""
+    css = (Path(__file__).resolve().parents[1]
+           / "src/anduin/web/static/app.css").read_text(encoding="utf-8")
+    assert 'input[value="maintain"]:checked' in css
+    assert 'input[value="none"]:checked' in css
+    assert ".goal-target" in css
