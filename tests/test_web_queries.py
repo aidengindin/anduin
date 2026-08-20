@@ -114,8 +114,19 @@ def test_respiratory_rate_status(row, expected):
 )
 def test_bucket_widens_with_range(since, until, expected):
     conn = FakeConn([[]])
-    out = queries.metric_series(conn, "steps", since, until)
+    out = queries.metric_series(conn, "resting_heart_rate", since, until)
     assert out["bucket"] == expected
+
+
+@pytest.mark.parametrize("since,until", [
+    (date(2026, 7, 1), date(2026, 7, 2)),
+    (date(2026, 6, 1), date(2026, 7, 1)),
+])
+def test_counter_metrics_pin_the_bucket_to_a_day(since, until):
+    # activity_daily is a daily rollup; an hour bucket would zero-fill 23
+    # phantom points per real day.
+    out = queries.metric_series(FakeConn([[]]), "steps", since, until)
+    assert out["bucket"] == "1 day"
 
 
 # test_daily_summary_merges_four_queries_by_day was removed — daily_summary()
@@ -196,3 +207,73 @@ def test_strength_sql_orders_warmups_before_working_sets():
     queries._load_strength(cur, "liftosaur", "w9")
     sql = " ".join(cur.executed[0][0].split())
     assert "ORDER BY e.exercise_idx, s.is_warmup DESC, s.set_index" in sql
+
+
+# --- zero-fill: counters vs point-in-time metrics ---------------------------
+
+COUNTERS = ["steps", "steps_neat", "steps_workout",
+            "active_calories", "active_calories_neat", "active_calories_workout"]
+POINT_IN_TIME = ["body_weight", "body_fat_ratio", "muscle_mass", "fat_free_mass",
+                 "hrv", "resting_heart_rate", "spo2", "skin_temp"]
+
+
+@pytest.mark.parametrize("key", COUNTERS)
+def test_counters_are_zero_filled(key):
+    assert queries.METRICS[key].get("zero_fill") is True
+
+
+@pytest.mark.parametrize("key", POINT_IN_TIME)
+def test_point_in_time_metrics_are_not_zero_filled(key):
+    # A day with no weigh-in is not a zero-pound day; carrying the last
+    # reading forward is correct for these.
+    assert queries.METRICS[key].get("zero_fill") is not True
+
+
+def test_counter_latest_fills_days_and_ignores_the_metrics_own_filter():
+    conn = FakeConn([{"latest": 0.0, "latest_at": date(2026, 7, 14), "baseline": 900.0}])
+    out = queries._latest(conn, queries.METRICS["steps_workout"])
+    sql, params = conn._cursor.executed[0]
+    assert "generate_series" in sql
+    assert params == {"days": 30}
+    # The fill horizon must not carry the kind filter — that filtered max is
+    # the stale "last day with a workout" this fix exists to stop reporting.
+    horizon = sql.split("generate_series(")[1].split("- make_interval")[0]
+    assert "kind" not in horizon
+    assert out["value"] == 0.0 and out["at"] == date(2026, 7, 14)
+
+
+def test_counter_series_zero_fills_buckets_up_to_the_horizon():
+    conn = FakeConn([[{"t": _dt(2026, 7, 14), "avg": 0.0, "min": 0.0, "max": 0.0}]])
+    out = queries.metric_series(conn, "steps_workout", date(2026, 7, 1), date(2026, 7, 15))
+    sql, _ = conn._cursor.executed[0]
+    assert "generate_series" in sql and "coalesce" in sql and "least" in sql
+    assert out["points"][0]["avg"] == 0.0
+
+
+def test_point_in_time_series_keeps_gaps():
+    conn = FakeConn([[]])
+    queries.metric_series(conn, "body_weight", date(2026, 7, 1), date(2026, 7, 15))
+    sql, _ = conn._cursor.executed[0]
+    assert "generate_series" not in sql
+
+
+def test_counter_detail_stats_span_calendar_days_not_readings():
+    conn = FakeConn([
+        {"latest": 0.0, "latest_at": date(2026, 7, 14), "baseline": 300.0},  # _latest
+        [{"v": 0.0}, {"v": 2100.0}],                                        # _daily_values
+        {"avg7": 300.0, "lo": 0.0, "hi": 2100.0},                           # stats
+        [{"d": date(2026, 7, 14), "v": 0.0}, {"d": date(2026, 7, 13), "v": 2100.0}],
+    ])
+    out = queries.metric_detail(conn, "steps_workout")
+    stats_sql, stats_params = conn._cursor.executed[2]
+    recent_sql, recent_params = conn._cursor.executed[3]
+    assert stats_params == {"days": 7} and recent_params == {"days": 8}
+    assert "LIMIT 7" not in stats_sql and "LIMIT 8" not in recent_sql
+    assert out["lo"] == 0.0
+    assert out["recent"][0] == {"d": date(2026, 7, 14), "v": 0.0}
+
+
+def test_skin_temp_reads_the_daily_derivation_view():
+    m = queries.METRICS["skin_temp"]
+    assert m["view"] == "canonical.skin_temp_daily"
+    assert (m["date_col"], m["value_col"]) == ("local_date", "variation_c")
