@@ -18,6 +18,7 @@ from anduin.sources.google_health import (
     _emit_resting_heart_rate,
     _emit_respiratory_rate,
     _emit_sleep,
+    _emit_sleep_temp,
     _emit_spo2_daily,
     _emit_spo2_sample,
     _emit_steps,
@@ -285,3 +286,51 @@ def test_emit_active_energy_keeps_legacy_metric_name():
     assert row["metric"] == "active_energy"
     assert row["value"] == 8.5
     assert row["unit"] == "kcal"
+
+
+# --- nightly skin temperature (daily-sleep-temperature-derivations) ---
+
+def test_emit_sleep_temp_stores_nightly_baseline_and_stddev():
+    dp = {"dailySleepTemperatureDerivations": {
+        "date": {"year": 2026, "month": 3, "day": 16},
+        "nightlyTemperatureCelsius": 33.9,
+        "baselineTemperatureCelsius": 33.6,
+        "relativeNightlyStddev30dCelsius": 0.25,
+    }}
+    rows = {r["metric"]: r for r in _emit_sleep_temp(dp)}
+    assert set(rows) == {"skin_temp_nightly", "skin_temp_baseline", "skin_temp_rel_stddev_30d"}
+    assert rows["skin_temp_nightly"]["value"] == 33.9
+    assert rows["skin_temp_baseline"]["value"] == 33.6
+    assert rows["skin_temp_rel_stddev_30d"]["value"] == 0.25
+    for r in rows.values():
+        assert r["unit"] == "C"
+        assert r["local_date"] == date(2026, 3, 16)
+
+
+def test_emit_sleep_temp_without_baseline_still_stores_nightly():
+    # The first ~30 nights on a new device have no 30-day median yet.
+    dp = {"dailySleepTemperatureDerivations": {
+        "date": {"year": 2026, "month": 3, "day": 16},
+        "nightlyTemperatureCelsius": 33.9,
+    }}
+    rows = _emit_sleep_temp(dp)
+    assert [r["metric"] for r in rows] == ["skin_temp_nightly"]
+
+
+def test_emit_sleep_temp_accepts_snake_case_envelope():
+    dp = {"daily_sleep_temperature_derivations": {
+        "date": {"year": 2026, "month": 3, "day": 16},
+        "nightly_temperature_celsius": 33.9,
+    }}
+    assert _emit_sleep_temp(dp)[0]["value"] == 33.9
+
+
+def test_emit_sleep_temp_ignores_unrelated_datapoint():
+    assert _emit_sleep_temp({"dailyRestingHeartRate": {"beatsPerMinute": 52}}) == []
+
+
+def test_sleep_temp_filter_is_a_civil_date_range():
+    expr = _filter_expr("daily_sleep_temperature_derivations", "daily",
+                        date(2026, 3, 1), date(2026, 3, 3))
+    assert expr == ('daily_sleep_temperature_derivations.date >= "2026-03-01" '
+                    'AND daily_sleep_temperature_derivations.date < "2026-03-04"')

@@ -17,6 +17,7 @@ Data types pulled here (all confirmed against the v4 catalog):
   - daily-heart-rate-variability  : daily   — RMSSD
   - daily-resting-heart-rate      : daily   — bpm
   - daily-respiratory-rate        : daily   — breaths/min
+  - daily-sleep-temperature-derivations : daily — nightly skin temp + baseline
 
 Sleep lands in raw.sleep_sessions/raw.sleep_stages; fine-grained SpO2/HRV in
 raw.samples; the daily summaries in raw.daily_metrics (keyed on the source's
@@ -114,6 +115,17 @@ def _coerce_float(v) -> float | None:
         return float(v)
     except (TypeError, ValueError):
         return None
+
+
+def _first(d: dict, *keys: str):
+    """First present key's value. v4 serialises proto fields as camelCase, but
+    the exact envelope key is inferred for some types (see module docstring), so
+    the snake_case spelling is accepted as a fallback rather than silently
+    dropping the reading."""
+    for k in keys:
+        if d.get(k) is not None:
+            return d[k]
+    return None
 
 
 def _local_date(d: dict) -> date:
@@ -275,6 +287,35 @@ def _emit_spo2_daily(dp: dict) -> list[dict]:
     return out
 
 
+def _emit_sleep_temp(dp: dict) -> list[dict]:
+    """Nightly skin temperature, as up to three daily rows.
+
+    v4 has no `skin-temperature` data type — the Fitbit-era metric surfaces as
+    `daily-sleep-temperature-derivations`, the same derivation the Fitbit app
+    plots as "skin temperature variation": a nightly mean of the wrist skin
+    sensor plus the trailing 30-day median it is judged against. Both are stored
+    faithfully (with the 30d stddev) and `canonical.skin_temp_daily` subtracts
+    them, rather than persisting only the delta.
+    """
+    t = _first(dp, "dailySleepTemperatureDerivations", "daily_sleep_temperature_derivations")
+    if not isinstance(t, dict) or "date" not in t:
+        return []
+    ld = _local_date(t["date"])
+    fields = (
+        ("skin_temp_nightly", ("nightlyTemperatureCelsius", "nightly_temperature_celsius")),
+        ("skin_temp_baseline", ("baselineTemperatureCelsius", "baseline_temperature_celsius")),
+        ("skin_temp_rel_stddev_30d",
+         ("relativeNightlyStddev30dCelsius", "relative_nightly_stddev_30d_celsius")),
+    )
+    out = []
+    for metric, names in fields:
+        value = _coerce_float(_first(t, *names))
+        if value is None:
+            continue
+        out.append(_daily_row(metric, value, "C", ld, dp))
+    return out
+
+
 # Intraday heart_rate/steps/distance/active_energy. The proto field names below
 # are confirmed (beats_per_minute / count / meters / kcal); the JSON envelope
 # (camelCase nesting key + interval/sampleTime shape) is INFERRED from the sleep
@@ -348,6 +389,8 @@ _DAILY_TYPES = [
     ("daily-heart-rate-variability", "daily_heart_rate_variability", "daily", 1440),
     ("daily-resting-heart-rate", "daily_resting_heart_rate", "daily", 1440),
     ("daily-respiratory-rate", "daily_respiratory_rate", "daily", 1440),
+    ("daily-sleep-temperature-derivations",
+     "daily_sleep_temperature_derivations", "daily", 1440),
 ]
 # Sleep is a session type; pageSize caps at 25, so it always paginates.
 _SLEEP_TYPE = ("sleep", "sleep", "session", 25)
@@ -490,6 +533,7 @@ def extract(
         "daily-heart-rate-variability": lambda dp: [r for r in [_emit_hrv_daily(dp)] if r],
         "daily-resting-heart-rate": lambda dp: [r for r in [_emit_resting_heart_rate(dp)] if r],
         "daily-respiratory-rate": lambda dp: [r for r in [_emit_respiratory_rate(dp)] if r],
+        "daily-sleep-temperature-derivations": _emit_sleep_temp,
     }
     for data_type, filter_id, kind, page_size in _DAILY_TYPES:
         try:
