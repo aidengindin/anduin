@@ -8,13 +8,13 @@ pool-opening lifespan never runs.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 import pytest
 from fastapi.testclient import TestClient
 
 from anduin.config import AppConfig, FileConfig, Secrets
-from anduin.web import queries
+from anduin.web import goals, queries
 from anduin.web.app import create_app
 from anduin.web.deps import get_conn
 
@@ -91,7 +91,7 @@ def test_metrics_page_lists_all_metrics(client, monkeypatch):
 
 def test_metric_json_ok(client, monkeypatch):
     payload = {"metric": "steps", "label": "Steps", "unit": "count", "bucket": "1 hour", "points": []}
-    monkeypatch.setattr(queries, "metric_series", lambda conn, m, s, e: payload)
+    monkeypatch.setattr(queries, "metric_series", lambda conn, m, s, e, goal=None: payload)
     r = client.get("/api/metrics/steps.json?since=2026-07-01&until=2026-07-02")
     assert r.status_code == 200 and r.json() == payload
 
@@ -177,3 +177,109 @@ def test_workout_detail_shows_pounds_and_warmups_first(client, monkeypatch):
     assert "25 lb" in r.text and "120 lb" in r.text
     assert " kg" not in r.text
     assert r.text.index("25 lb") < r.text.index("120 lb")  # warmup rendered first
+
+
+# --- weight goal editor ----------------------------------------------------
+
+
+def _weight_detail():
+    card = {"key": "body_weight", "label": "Body weight", "desc": "Withings",
+            "unit": "lb", "color": "#6dd0b0", "group": "body", "digits": 1,
+            "value": 181.2, "at": _dt(2026, 8, 19), "delta": 0.3, "dir": "up",
+            "per_week": 0.4, "spark": "", "status": None}
+    return {"meta": queries.METRICS["body_weight"], "metric": "body_weight",
+            "card": card, "avg7": 181.0, "lo": 180.0, "hi": 182.0,
+            "recent": [], "status": None}
+
+
+@pytest.fixture()
+def weight_page(client, monkeypatch):
+    monkeypatch.setattr(queries, "metric_detail", lambda conn, m: _weight_detail())
+    monkeypatch.setattr(
+        queries, "weight_goal_status",
+        lambda conn, goal: {"kind": "bulk", "target": 0.4, "lo": 0.2, "hi": 0.6,
+                            "rate": 0.44, "n": 12, "days": 21.0,
+                            "pending": False, "verdict": "on_target"},
+    )
+    return client
+
+
+def test_weight_page_shows_the_current_phase_and_verdict(weight_page, monkeypatch):
+    monkeypatch.setattr(
+        goals, "current_goal",
+        lambda conn, uid: {"kind": "bulk", "target": 0.4, "started_on": date(2026, 7, 1)},
+    )
+    r = weight_page.get("/metrics/body_weight")
+    assert r.status_code == 200
+    assert "on target" in r.text.lower()
+
+
+def test_weight_page_without_a_goal_offers_to_set_one(weight_page, monkeypatch):
+    monkeypatch.setattr(goals, "current_goal", lambda conn, uid: None)
+    r = weight_page.get("/metrics/body_weight")
+    assert r.status_code == 200
+    assert 'name="kind"' in r.text
+
+
+def test_saving_a_goal_redirects_back_to_the_page(client, monkeypatch):
+    saved = {}
+    monkeypatch.setattr(goals, "set_goal",
+                        lambda conn, uid, kind, target: saved.update(kind=kind, target=target))
+    r = client.post("/metrics/body_weight/goal", data={"kind": "bulk", "target": "0.4"},
+                    follow_redirects=False)
+    assert r.status_code == 303
+    assert r.headers["location"] == "/metrics/body_weight"
+    assert saved == {"kind": "bulk", "target": 0.4}
+
+
+def test_saving_a_cut_stores_a_negative_rate(client, monkeypatch):
+    saved = {}
+    monkeypatch.setattr(goals, "set_goal",
+                        lambda conn, uid, kind, target: saved.update(target=target))
+    client.post("/metrics/body_weight/goal", data={"kind": "cut", "target": "1"},
+                follow_redirects=False)
+    assert saved == {"target": -1.0}
+
+
+def test_an_out_of_range_target_is_rejected_with_an_inline_error(weight_page, monkeypatch):
+    monkeypatch.setattr(goals, "current_goal", lambda conn, uid: None)
+    monkeypatch.setattr(goals, "set_goal", _unreachable)
+    r = weight_page.post("/metrics/body_weight/goal", data={"kind": "bulk", "target": "40"})
+    assert r.status_code == 400
+    assert "between 0 and 3" in r.text
+
+
+def test_a_bulk_without_a_target_is_rejected(weight_page, monkeypatch):
+    monkeypatch.setattr(goals, "current_goal", lambda conn, uid: None)
+    monkeypatch.setattr(goals, "set_goal", _unreachable)
+    r = weight_page.post("/metrics/body_weight/goal", data={"kind": "bulk", "target": ""})
+    assert r.status_code == 400
+    assert "weekly target" in r.text
+
+
+def test_an_unknown_kind_is_rejected(weight_page, monkeypatch):
+    monkeypatch.setattr(goals, "current_goal", lambda conn, uid: None)
+    monkeypatch.setattr(goals, "set_goal", _unreachable)
+    r = weight_page.post("/metrics/body_weight/goal", data={"kind": "recomp", "target": "1"})
+    assert r.status_code == 400
+
+
+def test_weight_chart_json_carries_the_goal_corridor(client, monkeypatch):
+    seen = {}
+
+    def _series(conn, metric, start, end, goal=None):
+        seen["goal"] = goal
+        return {"metric": metric, "points": [], "goal": {"kind": "bulk"}}
+
+    monkeypatch.setattr(queries, "metric_series", _series)
+    monkeypatch.setattr(
+        goals, "current_goal",
+        lambda conn, uid: {"kind": "bulk", "target": 0.4, "started_on": date(2026, 7, 1)},
+    )
+    r = client.get("/api/metrics/body_weight.json")
+    assert r.status_code == 200
+    assert seen["goal"]["kind"] == "bulk"
+
+
+def _unreachable(*args, **kwargs):
+    raise AssertionError("invalid input must not reach the database")
