@@ -24,7 +24,7 @@ nothing reads it.
 
 1. `identity.goals` — append-only phase history, edited from the UI.
 2. Smoothed trend math in `derived.body_composition_trend`.
-3. Daily readings + 7d/30d rolling averages + a projected goal corridor on
+3. Daily readings + 7d/30d rolling averages + a rolling goal corridor on
    `/metrics/body_weight`.
 4. A no-JavaScript goal editor on that same page.
 
@@ -131,13 +131,32 @@ range under 60 days, which is meaningless for a once-a-morning weigh-in. Rather
 than change that shared function for every metric, the registry gains a
 `min_bucket: "1 day"` key that body-composition metrics set.
 
-**Goal corridor.** Instead of drawing the target as a number, project it: anchor
-at the `avg_7d` on the day the phase started, then draw two lines fanning
-forward at the low and high edges of the tolerance band. The result is a
-widening corridor, and the question becomes visual — is the 7-day average inside
-the wedge, riding the top edge, or dropping out of the bottom. Serialized as
-`goal: {kind, target, lo: [...], hi: [...]}`, null-padded before the phase start
-and absent entirely when no goal is in effect.
+**Goal corridor.** The target is drawn as a **rolling 4-week corridor**, not a
+number. For each day *t*:
+
+```
+lo(t) = avg_7d(t - 28d) + (target - tolerance) * 4
+hi(t) = avg_7d(t - 28d) + (target + tolerance) * 4
+```
+
+That is a constant-width ribbon — ±0.8 lb at a 0.4 lb/wk target — tracking the
+weight curve four weeks behind, and it reads as *"where should I be today, given
+where I was a month ago"*. Is the 7-day average inside the ribbon, riding its
+top edge, or dropping out of the bottom?
+
+The rejected alternative was a wedge anchored at the phase start, fanning
+forward at the target rate. It fails twice over. Its width grows without bound —
+8 lb tall by week 20 of a 0.4 lb/wk bulk, far too coarse to act on — and because
+it never re-anchors, an overshoot in week two pushes the curve outside it
+permanently even after intake is corrected. It is also a *cumulative* readout,
+which is precisely the verdict basis rejected above in favour of recent rate;
+the corridor and the chip would have been measuring different things.
+
+The rolling anchor is blank for a phase's first four weeks, for the same reason
+the verdict chip reads `pending`: there is nothing honest to draw yet.
+
+Serialized as `goal: {kind, target, lo: [...], hi: [...]}`, null-padded where
+undefined and absent entirely when no goal is in effect.
 
 Both render through machinery that already exists: `renderMetric` in
 `static/charts.js` draws HRV's normal band as two transparent-stroke series plus
