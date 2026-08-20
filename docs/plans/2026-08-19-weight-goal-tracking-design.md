@@ -171,6 +171,16 @@ permanently even after intake is corrected. It is also a *cumulative* readout,
 which is precisely the verdict basis rejected above in favour of recent rate;
 the corridor and the chip would have been measuring different things.
 
+The overlay query reaches back `CORRIDOR_WEEKS` *before* the requested range,
+because each corridor day anchors four weeks behind itself. Anchoring on the
+visible points alone drew only the last three days of a one-month chart — the
+rest could not find an anchor inside the range.
+
+Because the anchor is a single day's `avg_7d`, the ribbon inherits that day's
+wobble: a dip in the 7-day average four weeks ago shows up as a dip in today's
+corridor. That is the readout being honest about what it is measuring, not a
+rendering fault.
+
 The rolling anchor is blank for a phase's first four weeks, for the same reason
 the verdict chip reads `pending`: there is nothing honest to draw yet.
 

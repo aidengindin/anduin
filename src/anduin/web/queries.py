@@ -8,7 +8,7 @@ the UI reads them directly rather than re-implementing anything.
 
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from psycopg import Connection
@@ -436,8 +436,8 @@ def metric_series(
     ]
     out = {"metric": metric, "label": m["label"], "unit": m["unit"], "bucket": bucket, "points": points}
     if m.get("trend") == "body_composition_trend":
-        _attach_rolling_averages(conn, m, metric, points, bucket, start_dt, end_dt)
-        lo, hi = _goal_corridor(points, goal)
+        anchors = _attach_rolling_averages(conn, m, metric, points, bucket, start_dt, end_dt)
+        lo, hi = _goal_corridor(points, anchors, goal)
         # All-None means the phase is younger than the corridor's lookback:
         # nothing to draw, so say nothing rather than lighting up a legend.
         if any(v is not None for v in lo):
@@ -470,8 +470,14 @@ def metric_series(
 def _attach_rolling_averages(
     conn: Connection, m: dict, metric: str, points: list[dict[str, Any]],
     bucket: str, start_dt: datetime, end_dt: datetime,
-) -> None:
-    """Merge trailing 7d/30d means onto ``points`` in place, keyed by bucket.
+) -> dict[int, float | None]:
+    """Merge trailing 7d/30d means onto ``points`` in place; return every
+    ``avg_7d`` fetched, keyed by bucket start, for the corridor to anchor on.
+
+    The query deliberately reaches back ``CORRIDOR_WEEKS`` before the range:
+    each corridor day anchors four weeks behind itself, so anchors for the
+    early part of the range predate it. Looking them up in the visible points
+    alone left all but the last few days of a one-month chart blank.
 
     Both series share the daily grain the metric's ``min_bucket`` floor
     guarantees, so the join on bucket start is exact; a day the trend view has
@@ -484,9 +490,10 @@ def _attach_rolling_averages(
           AND valid_from >= %(start)s AND valid_from < %(end)s
         GROUP BY t ORDER BY t
     """
+    lookback = timedelta(weeks=CORRIDOR_WEEKS)
     with conn.cursor() as cur:
         cur.execute(sql, {"bucket": bucket, "metric": metric,
-                          "start": start_dt, "end": end_dt})
+                          "start": start_dt - lookback, "end": end_dt})
         rows = cur.fetchall()
     scale = m.get("display_scale", 1.0)
     by_t = {int(r["t"].timestamp()): r for r in rows}
@@ -494,10 +501,15 @@ def _attach_rolling_averages(
         r = by_t.get(p["t"])
         p["avg7"] = float(r["avg7"]) * scale if r and r["avg7"] is not None else None
         p["avg30"] = float(r["avg30"]) * scale if r and r["avg30"] is not None else None
+    return {
+        t: float(r["avg7"]) * scale if r["avg7"] is not None else None
+        for t, r in by_t.items()
+    }
 
 
 def _goal_corridor(
-    points: list[dict[str, Any]], goal: dict[str, Any] | None
+    points: list[dict[str, Any]], anchors: dict[int, float | None],
+    goal: dict[str, Any] | None,
 ) -> tuple[list[float | None], list[float | None]]:
     """Rolling target ribbon, aligned to ``points``.
 
@@ -516,7 +528,6 @@ def _goal_corridor(
     tol = abs(target) * GOAL_TOLERANCE_FRACTION if target else MAINTAIN_TOLERANCE_LB_PER_WEEK
     span = CORRIDOR_WEEKS * 7 * 86400
     phase_start = _as_utc(goal["started_on"]).timestamp()
-    anchors = {p["t"]: p.get("avg7") for p in points}
     lo: list[float | None] = []
     hi: list[float | None] = []
     for p in points:

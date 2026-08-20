@@ -283,9 +283,13 @@ def _pts(n, avg7=180.0):
     return [{"t": _T0 + i * _DAY, "avg7": avg7} for i in range(n)]
 
 
+def _anchors(points):
+    return {p["t"]: p["avg7"] for p in points}
+
+
 def test_corridor_anchors_four_weeks_back_at_the_target_rate():
     pts = _pts(29)
-    lo, hi = queries._goal_corridor(pts, _goal(target=0.4, started=date(2026, 6, 1)))
+    lo, hi = queries._goal_corridor(pts, _anchors(pts), _goal(target=0.4, started=date(2026, 6, 1)))
     # 180 + (0.4 -/+ 0.2) * 4 weeks
     assert lo[28] == pytest.approx(180.8)
     assert hi[28] == pytest.approx(182.4)
@@ -293,41 +297,41 @@ def test_corridor_anchors_four_weeks_back_at_the_target_rate():
 
 def test_corridor_is_blank_for_the_first_four_weeks_of_a_phase():
     pts = _pts(29)
-    lo, _ = queries._goal_corridor(pts, _goal(target=0.4, started=date(2026, 6, 1)))
+    lo, _ = queries._goal_corridor(pts, _anchors(pts), _goal(target=0.4, started=date(2026, 6, 1)))
     assert all(v is None for v in lo[:28])
 
 
 def test_corridor_width_does_not_grow_with_phase_length():
     pts = _pts(200)
-    lo, hi = queries._goal_corridor(pts, _goal(target=0.4, started=date(2026, 1, 1)))
+    lo, hi = queries._goal_corridor(pts, _anchors(pts), _goal(target=0.4, started=date(2026, 1, 1)))
     assert hi[40] - lo[40] == pytest.approx(hi[199] - lo[199])
 
 
 def test_corridor_is_absent_before_the_phase_start_date():
     pts = _pts(60)
-    lo, _ = queries._goal_corridor(pts, _goal(target=0.4, started=date(2026, 8, 1)))
+    lo, _ = queries._goal_corridor(pts, _anchors(pts), _goal(target=0.4, started=date(2026, 8, 1)))
     assert lo[40] is None
 
 
 def test_maintain_corridor_is_a_flat_band_around_the_anchor():
     pts = _pts(29)
-    lo, hi = queries._goal_corridor(pts, _goal(kind="maintain", target=None,
+    lo, hi = queries._goal_corridor(pts, _anchors(pts), _goal(kind="maintain", target=None,
                                                started=date(2026, 6, 1)))
     assert lo[28] == pytest.approx(179.0) and hi[28] == pytest.approx(181.0)
 
 
 def test_no_corridor_without_a_goal():
-    assert queries._goal_corridor(_pts(29), None) == ([], [])
+    assert queries._goal_corridor(_pts(29), _anchors(_pts(29)), None) == ([], [])
 
 
 def test_no_corridor_for_a_tombstoned_phase():
     goal = _goal(kind="none", target=None, started=date(2026, 6, 1))
-    assert queries._goal_corridor(_pts(29), goal) == ([], [])
+    assert queries._goal_corridor(_pts(29), _anchors(_pts(29)), goal) == ([], [])
 
 
 def test_corridor_skips_days_whose_anchor_is_missing():
     pts = [p for i, p in enumerate(_pts(29)) if i != 0]
-    lo, _ = queries._goal_corridor(pts, _goal(target=0.4, started=date(2026, 6, 1)))
+    lo, _ = queries._goal_corridor(pts, _anchors(pts), _goal(target=0.4, started=date(2026, 6, 1)))
     assert lo[-1] is None
 
 
@@ -361,3 +365,29 @@ def test_a_corridor_with_nothing_drawable_is_omitted_entirely():
     out = queries.metric_series(FakeConn([points, overlay]), "body_weight",
                                 date(2026, 7, 1), date(2026, 7, 2), goal)
     assert "goal" not in out
+
+
+def test_corridor_spans_the_whole_range_using_anchors_from_before_it():
+    """The anchor lives four weeks behind the day it draws, so a one-month
+    chart needs trend rows from before the range start. Looking anchors up in
+    the visible points alone left 28 of every 31 days blank."""
+    points = [{"t": _dt(2026, 8, 1), "avg": 84.0, "min": 84.0, "max": 84.0},
+              {"t": _dt(2026, 8, 2), "avg": 84.1, "min": 84.1, "max": 84.1}]
+    # The overlay query reaches back before the range: 7/4 and 7/5 anchor 8/1 and 8/2.
+    overlay = [{"t": _dt(2026, 7, 4), "avg7": 81.0, "avg30": 80.5},
+               {"t": _dt(2026, 7, 5), "avg7": 81.1, "avg30": 80.6},
+               {"t": _dt(2026, 8, 1), "avg7": 84.0, "avg30": 83.0},
+               {"t": _dt(2026, 8, 2), "avg7": 84.1, "avg30": 83.1}]
+    goal = {"kind": "bulk", "target": 0.4, "started_on": date(2026, 6, 1)}
+    out = queries.metric_series(FakeConn([points, overlay]), "body_weight",
+                                date(2026, 8, 1), date(2026, 8, 3), goal)
+    assert all(v is not None for v in out["goal"]["lo"]), "every day in range should draw"
+    assert out["goal"]["lo"][0] == pytest.approx(81.0 * 2.2046226218 + (0.4 - 0.2) * 4)
+
+
+def test_the_overlay_query_reaches_back_before_the_range_start():
+    conn = FakeConn([[], []])
+    queries.metric_series(conn, "body_weight", date(2026, 8, 1), date(2026, 8, 3),
+                          {"kind": "bulk", "target": 0.4, "started_on": date(2026, 6, 1)})
+    _, params = conn._cursor.executed[1]
+    assert params["start"].date() == date(2026, 7, 4)  # 28 days before the range
