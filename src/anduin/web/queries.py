@@ -438,7 +438,9 @@ def metric_series(
     if m.get("trend") == "body_composition_trend":
         _attach_rolling_averages(conn, m, metric, points, bucket, start_dt, end_dt)
         lo, hi = _goal_corridor(points, goal)
-        if lo:
+        # All-None means the phase is younger than the corridor's lookback:
+        # nothing to draw, so say nothing rather than lighting up a legend.
+        if any(v is not None for v in lo):
             out["goal"] = {
                 "kind": goal["kind"], "target": goal["target"], "lo": lo, "hi": hi,
             }
@@ -532,7 +534,7 @@ def _goal_corridor(
 def weight_goal_status(conn: Connection, goal: dict[str, Any] | None) -> dict[str, Any]:
     """Current smoothed rate of weight change, judged against the goal.
 
-    The fit runs over the trailing 21 days of the *smoothed* series, clipped so
+    The fit runs over the trailing 28 days of the *smoothed* series, clipped so
     it never reaches back before the phase started -- a rate computed partly
     from the previous phase would describe neither. Clipping is why this cannot
     live in the view: the window depends on a goal row the view cannot see."""
@@ -544,7 +546,7 @@ def weight_goal_status(conn: Connection, goal: dict[str, Any] | None) -> dict[st
                 WHERE metric = 'body_weight'
                   AND avg_7d IS NOT NULL
                   AND valid_from >= greatest(
-                          now() - interval '21 days',
+                          now() - interval '28 days',
                           coalesce(%(phase_start)s::date, '-infinity'::date)::timestamptz)
             )
             SELECT regr_slope(avg_7d, extract(epoch FROM valid_from)) * 604800.0 AS slope,

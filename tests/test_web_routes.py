@@ -8,7 +8,7 @@ pool-opening lifespan never runs.
 
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 from fastapi.testclient import TestClient
@@ -283,3 +283,25 @@ def test_weight_chart_json_carries_the_goal_corridor(client, monkeypatch):
 
 def _unreachable(*args, **kwargs):
     raise AssertionError("invalid input must not reach the database")
+
+
+def test_chart_key_omits_the_corridor_until_it_is_actually_drawn(weight_page, monkeypatch):
+    """The ribbon needs a four-week-old anchor; labelling it before then points
+    at empty space."""
+    monkeypatch.setattr(
+        goals, "current_goal",
+        lambda conn, uid: {"kind": "bulk", "target": 0.4,
+                           "started_on": datetime.now(timezone.utc).date()},
+    )
+    r = weight_page.get("/metrics/body_weight")
+    assert "goal corridor" not in r.text
+
+
+def test_chart_key_shows_the_corridor_once_the_phase_is_old_enough(weight_page, monkeypatch):
+    monkeypatch.setattr(
+        goals, "current_goal",
+        lambda conn, uid: {"kind": "bulk", "target": 0.4,
+                           "started_on": datetime.now(timezone.utc).date() - timedelta(days=40)},
+    )
+    r = weight_page.get("/metrics/body_weight")
+    assert "goal corridor" in r.text

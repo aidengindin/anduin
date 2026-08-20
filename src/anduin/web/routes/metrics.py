@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -72,6 +72,12 @@ def _render_metric_page(
         ctx["goal_status"] = queries.weight_goal_status(conn, goal)
         ctx["goal_error"] = goal_error
         ctx["goal_kinds"] = goals.KINDS
+        # The corridor needs an anchor four weeks back, so it stays out of the
+        # chart key until there is a ribbon to point at.
+        ctx["show_corridor"] = (
+            goal is not None and goal["kind"] != "none"
+            and (date.today() - goal["started_on"]).days >= queries.CORRIDOR_WEEKS * 7
+        )
     return templates.TemplateResponse(
         request, "metric_detail.html", ctx, status_code=status_code,
     )

@@ -349,3 +349,15 @@ def test_rolling_averages_are_aligned_onto_the_reading_points():
     assert out["points"][0]["avg7"] == pytest.approx(81.5 * 2.2046226218)
     assert out["points"][0]["avg30"] == pytest.approx(81.0 * 2.2046226218)
     assert out["points"][1]["avg7"] is None
+
+
+def test_a_corridor_with_nothing_drawable_is_omitted_entirely():
+    """A phase younger than four weeks has no anchor yet, so every day is None.
+    Serializing that would light up the chart legend for a ribbon that is not
+    there."""
+    points = [{"t": _dt(2026, 7, 1), "avg": 81.6, "min": 81.6, "max": 81.6}]
+    overlay = [{"t": _dt(2026, 7, 1), "avg7": 81.5, "avg30": 81.0}]
+    goal = {"kind": "bulk", "target": 0.4, "started_on": date(2026, 6, 25)}
+    out = queries.metric_series(FakeConn([points, overlay]), "body_weight",
+                                date(2026, 7, 1), date(2026, 7, 2), goal)
+    assert "goal" not in out

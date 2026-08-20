@@ -38,6 +38,16 @@
 <div class="card" style="padding:14px 12px 10px;">
   <div class="chart" data-chart="metric-line" data-color="{{ m.color }}"
        data-url="/api/metrics/{{ metric }}.json?since={{ since }}&until={{ until }}"></div>
+  {% if m.trend == 'body_composition_trend' %}
+  <div class="muted" style="display:flex;flex-wrap:wrap;gap:12px;font-size:11.5px;margin-top:8px;">
+    <span><span style="display:inline-block;width:14px;height:2.5px;background:{{ m.color }};vertical-align:middle;"></span> 7-day avg</span>
+    <span><span style="display:inline-block;width:14px;height:2px;background:#7aa2f7;vertical-align:middle;"></span> 30-day avg</span>
+    <span><span style="display:inline-block;width:14px;height:1px;background:{{ m.color }}55;vertical-align:middle;"></span> reading</span>
+    {% if show_corridor %}
+    <span><span style="display:inline-block;width:14px;height:8px;background:rgba(240,166,60,.22);vertical-align:middle;"></span> goal corridor</span>
+    {% endif %}
+  </div>
+  {% endif %}
 </div>
 
 {% if metric == 'body_weight' %}

@@ -1,6 +1,6 @@
 """FastAPI application factory.
 
-``create_app(app_config)`` builds the read-only UI: opens a connection pool on
+``create_app(app_config)`` builds the UI: opens a connection pool on
 startup, mounts static assets, registers routes. Launched by ``anduin serve``.
 """
 

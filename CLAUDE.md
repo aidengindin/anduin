@@ -95,6 +95,46 @@ workout that carves a window **must** contribute a calorie number or that energy
 vanishes from `total_energy` — which is exactly what happened to every liftosaur
 session before 0023 (55–180 kcal each).
 
+### Weight trend: smooth first, then fit
+
+`derived.body_composition_trend` exposes two slopes and the UI shows the second:
+
+- `slope_per_week` — 28d OLS on **raw** readings (the original, from 0013).
+- `smoothed_slope_per_week` — 28d OLS on **`avg_7d`** (0024). This is what
+  `_body_slope_per_week` reads.
+
+Day-to-day weight swings of 1–2 lb sit on top of a bulk signal near 0.3–0.5
+lb/wk, so a fit against raw readings has a standard error comparable to its own
+signal and lurches with every weigh-in. Fitting the smoothed series removes the
+variance before the regression sees it.
+
+The 28-day window was measured over synthetic bulks, not guessed — it beats 21d
+on accuracy (0.125 vs 0.183 mean abs. error), stability (0.024 vs 0.039
+day-to-day jump) *and* time to settle after a real rate change. A shorter window
+is not more responsive; it is too noisy to converge. Don't "tighten" it back.
+
+### Goal phases and the rolling corridor
+
+`identity.goals` is append-only (bulk / cut / maintain / none), one row per
+phase start; the phase in effect on a date is the latest row at or before it.
+`none` is a tombstone ending a phase without starting a targeted one, and no
+rows at all means no goal. `target_lb_per_week` is **signed** and stored in
+**lb**, not kg — it is a number typed in display units.
+
+Two things must keep agreeing, or the page contradicts itself:
+
+1. The verdict chip fits the trailing 28 days **clipped to the phase start** —
+   which is why it lives in `queries.weight_goal_status` and not in the view: a
+   view cannot see a goal row.
+2. The chart corridor re-anchors daily on `avg_7d` from four weeks back, so its
+   width is **constant**.
+
+Both therefore describe recent rate. An earlier design pinned the corridor to
+the phase start and fanned it forward; that version widened without bound (8 lb
+by week 20 of a 0.4 lb/wk bulk), never re-anchored — so one bad fortnight
+displaced it permanently — and silently measured *cumulative* progress while the
+chip measured recent rate. Don't reintroduce it.
+
 ## Units / naming gotchas
 
 - intervals.icu activity streams store HR under metric **`heartrate`** (no

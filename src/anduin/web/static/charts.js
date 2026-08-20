@@ -1,6 +1,7 @@
 // Chart glue for anduin. Finds every `.chart[data-chart]` and renders it with
 // uPlot. Three kinds:
-//   metric-line   — fetches data-url JSON {points:[{t,avg,min,max}], unit}
+//   metric-line   — fetches data-url JSON {points:[{t,avg,min,max,avg7,avg30}],
+//                   unit, goal:{lo,hi}}
 //   stream-line   — reads data-series JSON [{t, v}]
 //   summary-bars  — reads data-series JSON [{t, steps, energy}]
 // All timestamps are epoch seconds (uPlot's native x scale).
@@ -100,11 +101,33 @@
           series.push({ label: "normal high", stroke: "transparent", _vals: hi });
           bands.push({ series: [hiIdx, loIdx], fill: color + "1f" });
         }
-        series.push(
-          { label: "min", stroke: color + "33", _vals: min },
-          { label: "max", stroke: color + "33", _vals: max },
-          { label: d.label || "avg", stroke: color, width: 2.4, _vals: avg },
-        );
+        // Goal corridor (body weight): a constant-width ribbon showing where the
+        // 7-day average should sit today given where it sat four weeks ago.
+        // Same two-transparent-series + band trick as the HRV normal range.
+        if (d.goal) {
+          const gLo = series.length;
+          series.push({ label: "goal low", stroke: "transparent", _vals: d.goal.lo });
+          const gHi = series.length;
+          series.push({ label: "goal high", stroke: "transparent", _vals: d.goal.hi });
+          bands.push({ series: [gHi, gLo], fill: "rgba(240,166,60,0.13)" });
+        }
+        // Rolling averages carry the eye when present; the raw readings drop to
+        // a faint trace, and min/max are dropped entirely (a single morning
+        // weigh-in has no spread worth drawing).
+        const hasRolling = pts.some(function (p) { return p.avg7 != null; });
+        if (hasRolling) {
+          series.push(
+            { label: "reading", stroke: color + "44", width: 1, _vals: avg },
+            { label: "30-day avg", stroke: "#7aa2f7", width: 1.6, _vals: pts.map(function (p) { return p.avg30; }) },
+            { label: "7-day avg", stroke: color, width: 2.4, _vals: pts.map(function (p) { return p.avg7; }) },
+          );
+        } else {
+          series.push(
+            { label: "min", stroke: color + "33", _vals: min },
+            { label: "max", stroke: color + "33", _vals: max },
+            { label: d.label || "avg", stroke: color, width: 2.4, _vals: avg },
+          );
+        }
         lineChart(el, xs, series, d.unit, bands);
       })
       .catch(function () { emptyMsg(el, "Failed to load."); });
