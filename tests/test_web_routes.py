@@ -598,3 +598,29 @@ def test_home_nudges_when_nothing_is_logged_today(client, monkeypatch):
     monkeypatch.setattr(queries, "home", lambda conn, uid, today: _home_bundle(None))
     r = client.get("/")
     assert "Not logged today" in r.text
+
+
+# --- static asset cache-busting ---------------------------------------------
+
+
+def test_asset_version_tracks_content_not_mtime(tmp_path, monkeypatch):
+    """Nix sets every store file's mtime to 1, so an mtime-based token was
+    `?v=1` for every deploy and phones kept a stale app.css after a UI change.
+    The token must change when a file's *content* changes, mtime untouched."""
+    from anduin.web import app as app_mod
+
+    static = tmp_path / "static"
+    static.mkdir()
+    css = static / "app.css"
+    css.write_text("a{}")
+    import os
+    os.utime(css, (1, 1))
+    monkeypatch.setattr(app_mod, "_STATIC_DIR", static)
+    v1 = app_mod._asset_version()
+    css.write_text("a{color:red}")
+    os.utime(css, (1, 1))
+    v2 = app_mod._asset_version()
+    assert v1 != v2
+    css.write_text("a{}")
+    os.utime(css, (1, 1))
+    assert app_mod._asset_version() == v1

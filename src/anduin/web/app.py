@@ -6,6 +6,7 @@ startup, mounts static assets, registers routes. Launched by ``anduin serve``.
 
 from __future__ import annotations
 
+import hashlib
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -25,14 +26,21 @@ _STATIC_DIR = Path(__file__).parent / "static"
 
 
 def _asset_version() -> str:
-    """Newest mtime across static assets, as a cache-busting token. Bumps
-    whenever a vendored/CSS/JS file changes so browsers refetch instead of
-    serving a stale copy."""
+    """Short content hash across static assets, as a cache-busting token.
+
+    Content, not mtime: the nix store stamps every file with mtime 1, so an
+    mtime-based token read ``?v=1`` on every deploy and phones kept serving a
+    cached app.css long after the UI had changed. Hashing the bytes bumps the
+    token exactly when a vendored/CSS/JS file actually changes."""
+    h = hashlib.sha256()
     try:
-        mtimes = [p.stat().st_mtime for p in _STATIC_DIR.rglob("*") if p.is_file()]
-        return str(int(max(mtimes))) if mtimes else "0"
+        for p in sorted(_STATIC_DIR.rglob("*")):
+            if p.is_file():
+                h.update(p.relative_to(_STATIC_DIR).as_posix().encode())
+                h.update(p.read_bytes())
     except OSError:
         return "0"
+    return h.hexdigest()[:12]
 
 
 def create_app(config: AppConfig) -> FastAPI:
