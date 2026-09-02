@@ -110,7 +110,7 @@
     </details>
   </div>
 
-  <form method="post" action="/log/day" class="card intake" style="margin-top:12px;">
+  <form method="post" action="/log/day" class="card intake" data-autosave style="margin-top:12px;">
     <input type="hidden" name="date" value="{{ day.isoformat() }}">
     <div class="grid c2">
       <label><span class="stat-label">Coffee</span>
@@ -120,15 +120,15 @@
         <input class="field num" type="number" name="alcohol" inputmode="numeric" min="0" max="20" step="1"
                placeholder="drinks" value="{{ context.alcohol_drinks if context.alcohol_drinks is not none else '' }}"></label>
     </div>
-    <button type="submit" class="btn" style="margin-top:10px;width:100%;">Save intake</button>
+    <div class="save-row"><button type="submit" class="btn">Save intake</button><span class="autosave-status" aria-live="polite"></span></div>
   </form>
 
-  <form method="post" action="/log/day" class="card" style="margin-top:12px;">
+  <form method="post" action="/log/day" class="card" data-autosave style="margin-top:12px;">
     <input type="hidden" name="date" value="{{ day.isoformat() }}">
     <label class="stat-label" for="daynote" style="display:block;margin-bottom:6px;">Day note</label>
     <textarea class="field" id="daynote" name="daynote" rows="2" maxlength="500"
               placeholder="Anything about the day worth remembering">{{ context.note or '' }}</textarea>
-    <button type="submit" class="btn" style="margin-top:10px;width:100%;">Save note</button>
+    <div class="save-row"><button type="submit" class="btn">Save note</button><span class="autosave-status" aria-live="polite"></span></div>
   </form>
 
   {% if checkins %}
@@ -209,6 +209,43 @@
     }
     el.addEventListener('input', sync);
     sync();
+  });
+  // Autosave for the per-day forms (intake, day note): POST the form itself
+  // with Accept: application/json, so the no-JS path (plain submit + 303) is
+  // untouched. Numbers save on change; the note saves after a typing pause
+  // and on blur. The Save button is hidden once this is wired up.
+  document.querySelectorAll('form[data-autosave]').forEach(function (form) {
+    var status = form.querySelector('.autosave-status');
+    var timer = null, inflight = null, dirty = false;
+    form.classList.add('autosaving');
+    function show(text, cls) {
+      status.textContent = text;
+      status.className = 'autosave-status ' + (cls || '');
+    }
+    function save() {
+      clearTimeout(timer); timer = null;
+      if (inflight) { dirty = true; return; }
+      dirty = false;
+      show('Saving…', 'busy');
+      inflight = fetch(form.action, {
+        method: 'POST',
+        body: new URLSearchParams(new FormData(form)),
+        headers: { 'Accept': 'application/json' },
+        credentials: 'same-origin'
+      }).then(function (r) { return r.json().then(function (j) { return { ok: r.ok && j.ok, j: j }; }); })
+        .then(function (res) { show(res.ok ? 'Saved' : (res.j.error || 'Could not save'), res.ok ? 'ok' : 'err'); })
+        .catch(function () { show('Offline, not saved', 'err'); })
+        .then(function () { inflight = null; if (dirty) save(); });
+    }
+    function later() { clearTimeout(timer); timer = setTimeout(save, 800); }
+    form.querySelectorAll('input[type=number]').forEach(function (el) {
+      el.addEventListener('change', save);
+    });
+    form.querySelectorAll('textarea').forEach(function (el) {
+      el.addEventListener('input', later);
+      el.addEventListener('blur', function () { if (timer) save(); });
+    });
+    form.addEventListener('submit', function (e) { e.preventDefault(); save(); });
   });
 </script>
 {% endblock %}

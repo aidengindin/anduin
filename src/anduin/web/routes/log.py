@@ -123,15 +123,26 @@ async def delete_checkin(
     return RedirectResponse(f"/log?date={day.isoformat()}", status_code=303)
 
 
+def _wants_json(request: Request) -> bool:
+    return "application/json" in request.headers.get("accept", "")
+
+
 @router.post("/log/day", response_model=None)
 async def set_day(
     request: Request, conn: Connection = Depends(get_conn),
-) -> HTMLResponse | RedirectResponse:
+) -> HTMLResponse | RedirectResponse | JSONResponse:
+    """Per-day context. The page's autosave script POSTs the same form with
+    ``Accept: application/json`` and gets a body back instead of a 303; a
+    plain submit (no JS) still lands on the page."""
     form = await request.form()
     day = _parse_day(form.get("date"))
     try:
         fields = journal.parse_day_context(form)
     except journal.JournalError as exc:
+        if _wants_json(request):
+            return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
         return _render(request, conn, day, error=str(exc), status_code=400)
     journal.set_day_context(conn, user_id(request), day, fields)
+    if _wants_json(request):
+        return JSONResponse({"ok": True, "saved": fields})
     return RedirectResponse(f"/log?date={day.isoformat()}", status_code=303)

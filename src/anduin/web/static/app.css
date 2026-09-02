@@ -271,6 +271,13 @@ a.row:hover { background: var(--card2); }
    width:100% unless the native appearance is reset, which overflowed the
    check-in card on the phone. */
 textarea.field { resize: vertical; line-height: 1.45; }
+.save-row { display: flex; align-items: center; gap: 12px; margin-top: 10px; min-height: 22px; }
+.save-row .btn { flex: 1; }
+form.autosaving .save-row .btn { display: none; }
+.autosave-status { font-size: 12px; color: var(--muted); }
+.autosave-status.ok { color: var(--teal); }
+.autosave-status.err { color: var(--coral); }
+.autosave-status.busy { color: var(--muted); }
 .field[type="datetime-local"], .field[type="number"] {
   -webkit-appearance: none; appearance: none;
   display: block; min-width: 0; max-width: 100%; min-height: 40px;

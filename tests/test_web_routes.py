@@ -583,6 +583,32 @@ def test_day_note_is_shown_prefilled_and_saved(log_page, monkeypatch):
     assert r.status_code == 303 and saved == {"note": "new note"}
 
 
+def test_autosave_gets_json_instead_of_a_redirect(client, monkeypatch):
+    """The autosave script POSTs the same form with Accept: application/json;
+    it needs a body it can read, not a 303 to the page."""
+    saved = {}
+    monkeypatch.setattr(journal, "set_day_context",
+                        lambda conn, uid, d, fields: saved.update(fields))
+    r = client.post("/log/day", data={"date": "2026-09-01", "coffee": "2", "alcohol": ""},
+                    headers={"Accept": "application/json"}, follow_redirects=False)
+    assert r.status_code == 200
+    assert r.json() == {"ok": True, "saved": {"coffee_cups": 2, "alcohol_drinks": None}}
+    assert saved == {"coffee_cups": 2, "alcohol_drinks": None}
+
+
+def test_autosave_errors_are_json_too(client, monkeypatch):
+    monkeypatch.setattr(journal, "set_day_context", _unreachable)
+    r = client.post("/log/day", data={"date": "2026-09-01", "coffee": "99"},
+                    headers={"Accept": "application/json"})
+    assert r.status_code == 400
+    assert r.json()["ok"] is False and "coffee" in r.json()["error"]
+
+
+def test_the_day_forms_are_marked_for_autosave(log_page):
+    r = log_page.get("/log")
+    assert r.text.count(" data-autosave ") == 2   # the two forms, not the script's selector
+
+
 def test_a_bad_day_context_re_renders_with_the_error(log_page, monkeypatch):
     monkeypatch.setattr(journal, "set_day_context", _unreachable)
     r = log_page.post("/log/day", data={"date": "2026-09-01", "fluorescent": "lots"})
