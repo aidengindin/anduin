@@ -20,6 +20,12 @@ def get_conn(request: Request) -> Iterator[Connection]:
         yield conn
 
 
+def user_id(request: Request) -> int:
+    """Owner of every row written or read by the UI. Single-user today; the id
+    is configured, never defaulted at the DB level (see CLAUDE.md)."""
+    return request.app.state.config.file.user_id
+
+
 def parse_range(
     since: str | None, until: str | None, default_days: int = 30
 ) -> tuple[date, date]:

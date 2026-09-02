@@ -158,3 +158,47 @@ def test_replaced_views_only_append_columns():
                     "CREATE OR REPLACE VIEW can only append; put new columns last."
                 )
             seen[view] = (name, cols)
+
+
+# --- 0026 headache journal ---------------------------------------------------
+
+
+def test_headache_journal_lives_in_its_own_schema():
+    """User-entered observations get a `journal` schema, separate from ingested
+    `raw` data and from `identity` (owners + goal phases), with the same
+    read-only grant pair every schema carries (see 0009)."""
+    text = _sql("0026_headache_journal.sql")
+    assert "CREATE SCHEMA IF NOT EXISTS journal" in text
+    assert "GRANT USAGE ON SCHEMA journal TO anduin_ro" in text
+    assert "ALTER DEFAULT PRIVILEGES IN SCHEMA journal GRANT SELECT ON TABLES TO anduin_ro" in text
+    assert "CREATE TABLE IF NOT EXISTS journal.headache_checkins" in text
+    assert "CREATE TABLE IF NOT EXISTS journal.headache_days" in text
+
+
+def test_headache_checkins_constrain_every_enumerated_field():
+    """The DB, not the form, is the last line of defence on ranges and enums --
+    the ntfy button posts straight to the API with no browser in between."""
+    text = _sql("0026_headache_journal.sql")
+    assert "CHECK (intensity BETWEEN 0 AND 10)" in text
+    assert "CHECK (nausea BETWEEN 0 AND 3)" in text
+    assert "qualities <@ ARRAY['pressure','throbbing','sharp','icepick','unilateral']" in text
+    assert "CHECK (source IN ('app','ntfy'))" in text
+    assert "UNIQUE (user_id, logged_at)" in text
+    # The day-level override for a flare that fell between check-ins.
+    assert "CHECK (peak_intensity BETWEEN 0 AND 10)" in text
+    assert "CHECK (fluorescent_exposure IN ('none','brief','hours'))" in text
+    # Daily intake counts, NULL = not recorded (not zero).
+    assert "coffee_cups" in text and "CHECK (coffee_cups BETWEEN 0 AND 20)" in text
+    assert "alcohol_drinks" in text and "CHECK (alcohol_drinks BETWEEN 0 AND 20)" in text
+    assert "UNIQUE (user_id, local_date)" in text
+
+
+def test_headache_daily_takes_the_greater_of_checkin_and_day_peak():
+    """A remembered flare outranks what the check-ins saw, and a day with
+    neither is NULL (unknown), never 0."""
+    text = _sql("0026_headache_journal.sql")
+    assert "CREATE OR REPLACE VIEW derived.headache_daily" in text
+    body = text.split("derived.headache_daily")[1]
+    assert "greatest(" in body.lower()
+    assert "AS checkin_peak" in body and "AS day_peak" in body and "AS peak" in body
+    assert "AS coffee_cups" in body and "AS alcohol_drinks" in body

@@ -1,0 +1,252 @@
+{% extends "base.html" %}
+{% block title %}Log · anduin{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <div class="sub">{{ 'Today' if is_today else day.strftime('%A') }} · {{ day.strftime('%b %-d') }}</div>
+    <h1>Headache</h1>
+  </div>
+  {% if not is_today %}<a class="back" href="/log" style="font-weight:600;">Today ›</a>{% endif %}
+</div>
+
+{% if error %}
+<div class="chip low" style="margin-bottom:12px;">{{ error }}</div>
+{% endif %}
+
+{# ---- check-in ---- #}
+<form method="post" action="/log/headache" class="card checkin" data-zero="true">
+  <input type="hidden" name="date" value="{{ day.isoformat() }}">
+  <input type="hidden" name="tz_offset" id="tz_offset" value="{{ server_offset }}">
+  <div class="row-between">
+    <span class="stat-label">How's your head right now?</span>
+  </div>
+  <div class="slider" style="margin-top:10px;">
+    <output class="num readout" for="intensity">0</output>
+    <input type="range" name="intensity" id="intensity" min="0" max="10" step="1" value="0">
+  </div>
+  <div class="muted scale-ends"><span>none</span><span>worst</span></div>
+
+  {# Only above 0: pure CSS (:has), so a "no headache" answer is two taps. #}
+  <div class="checkin-details">
+    <div class="stat-label" style="margin-bottom:8px;">Character</div>
+    <div class="chips">
+      {% for q in qualities %}
+      <input type="checkbox" name="qualities" id="q-{{ q }}" value="{{ q }}">
+      <label for="q-{{ q }}">{{ q }}</label>
+      {% endfor %}
+    </div>
+
+    <div class="stat-label" style="margin:14px 0 8px;">Nausea</div>
+    <div class="seg radio">
+      {% for n in nauseas %}
+      <input type="radio" name="nausea" id="n{{ loop.index0 }}" value="{{ loop.index0 }}" {{ 'checked' if loop.first }}>
+      <label for="n{{ loop.index0 }}">{{ n }}</label>
+      {% endfor %}
+    </div>
+
+    <div class="chips" style="margin-top:14px;">
+      <input type="checkbox" name="light" id="light" value="on"><label for="light">light sensitivity</label>
+      <input type="checkbox" name="noise" id="noise" value="on"><label for="noise">noise sensitivity</label>
+    </div>
+
+    <input class="field" type="text" name="note" maxlength="500" placeholder="Note (optional)" style="margin-top:14px;">
+  </div>
+
+  <details class="when" {{ 'open' if not is_today }} style="margin-top:14px;">
+    <summary class="muted" style="cursor:pointer;font-size:13px;">Different time</summary>
+    <input class="field num" type="datetime-local" name="at" min="{{ min_at }}" max="{{ max_at }}"
+           value="{{ (day.isoformat() ~ 'T12:00') if not is_today else '' }}" style="margin-top:8px;">
+  </details>
+
+  <button type="submit" class="btn primary" style="margin-top:16px;width:100%;">Save check-in</button>
+</form>
+
+{# ---- the day ---- #}
+<div class="section">
+  <div class="section-label">{{ 'Today' if is_today else day|fmt_date }}</div>
+  <div class="card">
+    <div class="stat-label">Fluorescent light</div>
+    <form method="post" action="/log/day" class="seg" style="margin-top:8px;">
+      <input type="hidden" name="date" value="{{ day.isoformat() }}">
+      {% for f in fluorescent %}
+      <button type="submit" name="fluorescent" value="{{ f }}" class="{{ 'on' if context.fluorescent_exposure == f }}">{{ f }}</button>
+      {% endfor %}
+    </form>
+
+    <div class="row-between" style="margin-top:16px;">
+      <span class="stat-label">Day peak</span>
+      <span class="num" style="color:var(--text);font-weight:600;font-size:14px;">
+        {% if context.peak_intensity is not none %}
+          {{ context.peak_intensity }}{% if checkin_peak is not none %} <span class="muted">· check-ins {{ checkin_peak }}</span>{% endif %}
+        {% elif checkin_peak is not none %}
+          {{ checkin_peak }} <span class="muted">from check-ins</span>
+        {% else %}
+          <span class="dim">—</span>
+        {% endif %}
+      </span>
+    </div>
+    <details class="peak" style="margin-top:8px;" {{ 'open' if error and 'peak' in error }}>
+      <summary class="muted" style="cursor:pointer;font-size:12.5px;">
+        {% if context.peak_intensity is not none and checkin_peak is not none and context.peak_intensity <= checkin_peak %}
+        Override set, but the check-ins already reach it.
+        {% else %}
+        Had a flare the check-ins missed? Set the day's peak.
+        {% endif %}
+      </summary>
+      <form method="post" action="/log/day" style="margin-top:10px;">
+        <input type="hidden" name="date" value="{{ day.isoformat() }}">
+        <div class="slider small">
+          <output class="num readout" for="peak">{{ context.peak_intensity if context.peak_intensity is not none else (checkin_peak or 0) }}</output>
+          <input type="range" name="peak" id="peak" min="0" max="10" step="1"
+                 value="{{ context.peak_intensity if context.peak_intensity is not none else (checkin_peak or 0) }}">
+        </div>
+        <div style="display:flex;gap:8px;margin-top:10px;">
+          <button type="submit" class="btn">Set</button>
+          {% if context.peak_intensity is not none %}
+          <button type="submit" class="btn" name="peak" value="">Clear</button>
+          {% endif %}
+        </div>
+      </form>
+    </details>
+  </div>
+
+  <form method="post" action="/log/day" class="card intake" data-autosave style="margin-top:12px;">
+    <input type="hidden" name="date" value="{{ day.isoformat() }}">
+    <div class="row-between" style="margin-bottom:8px;"><span class="stat-label">Intake</span><span class="autosave-status" aria-live="polite"></span></div>
+    <div class="grid c2">
+      <label><span class="stat-label sub">Coffee</span>
+        <input class="field num" type="number" name="coffee" inputmode="numeric" min="0" max="20" step="1"
+               placeholder="cups" value="{{ context.coffee_cups if context.coffee_cups is not none else '' }}"></label>
+      <label><span class="stat-label sub">Alcohol</span>
+        <input class="field num" type="number" name="alcohol" inputmode="numeric" min="0" max="20" step="1"
+               placeholder="drinks" value="{{ context.alcohol_drinks if context.alcohol_drinks is not none else '' }}"></label>
+    </div>
+    <div class="save-row"><button type="submit" class="btn">Save intake</button></div>
+  </form>
+
+  <form method="post" action="/log/day" class="card" data-autosave style="margin-top:12px;">
+    <input type="hidden" name="date" value="{{ day.isoformat() }}">
+    <div class="row-between" style="margin-bottom:8px;"><label class="stat-label" for="daynote">Day note</label><span class="autosave-status" aria-live="polite"></span></div>
+    <textarea class="field" id="daynote" name="daynote" rows="2" maxlength="500"
+              placeholder="Anything about the day worth remembering">{{ context.note or '' }}</textarea>
+    <div class="save-row"><button type="submit" class="btn">Save note</button></div>
+  </form>
+
+  {% if checkins %}
+  <div class="card" style="margin-top:12px;padding-bottom:8px;">
+    <svg class="timeline" viewBox="0 0 240 40" preserveAspectRatio="none">
+      {% for h in (6, 12, 18) %}<line x1="{{ h * 10 }}" y1="0" x2="{{ h * 10 }}" y2="40" stroke="rgba(255,255,255,.07)"/>{% endfor %}
+      {% if checkins|length > 1 %}<polyline points="{{ timeline }}" fill="none" stroke="#ef6b5e" stroke-width="1.5" stroke-linejoin="round"/>{% endif %}
+      {% for p in timeline.split() %}<circle cx="{{ p.split(',')[0] }}" cy="{{ p.split(',')[1] }}" r="2.2" fill="#ef6b5e"/>{% endfor %}
+    </svg>
+    <div class="muted scale-ends" style="margin-top:2px;"><span>0h</span><span>6</span><span>12</span><span>18</span><span>24h</span></div>
+  </div>
+  <div class="list" style="margin-top:12px;">
+    {% for c in checkins %}
+    <div class="row" style="align-items:flex-start;">
+      <span class="num" style="color:var(--text2);font-size:13px;width:60px;padding-top:2px;">{{ c.local_time|fmt_clock }}</span>
+      <div class="main">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span class="num" style="color:var(--text);font-weight:700;font-size:18px;width:22px;">{{ c.intensity }}</span>
+          <div style="flex:1;height:6px;border-radius:4px;background:rgba(255,255,255,.08);overflow:hidden;"><div style="width:{{ c.intensity * 10 }}%;height:100%;background:#ef6b5e;"></div></div>
+        </div>
+        {% set tags = c.qualities|list %}
+        {% if c.nausea %}{% set _ = tags.append('nausea ' ~ c.nausea) %}{% endif %}
+        {% if c.light_sensitivity %}{% set _ = tags.append('light') %}{% endif %}
+        {% if c.noise_sensitivity %}{% set _ = tags.append('noise') %}{% endif %}
+        {% if c.source == 'ntfy' %}{% set _ = tags.append('via reminder') %}{% endif %}
+        {% if tags %}<div class="desc" style="margin-top:4px;">{{ tags|join(' · ') }}</div>{% endif %}
+        {% if c.note %}<div style="color:var(--text2);font-size:13px;margin-top:4px;">{{ c.note }}</div>{% endif %}
+      </div>
+      <form method="post" action="/log/headache/{{ c.id }}/delete">
+        <input type="hidden" name="date" value="{{ day.isoformat() }}">
+        <button type="submit" class="del" aria-label="Delete">×</button>
+      </form>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="card" style="margin-top:12px;"><div class="empty-state">No check-ins {{ 'yet today' if is_today else 'this day' }}.</div></div>
+  {% endif %}
+</div>
+
+{# ---- recent days ---- #}
+<div class="section">
+  <div class="section-label">Recent days <a href="/metrics/headache_peak">Chart ›</a></div>
+  {% if recent %}
+  <div class="list">
+    {% for d in recent %}
+    <a class="row" href="/log?date={{ d.local_date.isoformat() }}">
+      <div class="main">
+        <div class="name">{{ d.local_date|fmt_date }}</div>
+        <div class="desc">{{ d.n_checkins }} check-in{{ '' if d.n_checkins == 1 else 's' }}{% if d.fluorescent_exposure %} · fluorescent: {{ d.fluorescent_exposure }}{% endif %}{% if d.coffee_cups is not none %} · ☕ {{ d.coffee_cups }}{% endif %}{% if d.alcohol_drinks is not none %} · 🍺 {{ d.alcohol_drinks }}{% endif %}</div>
+      </div>
+      <div class="rt">
+        {% if d.peak is not none %}
+        <div class="v">{{ d.peak }}{% if d.day_peak is not none and (d.checkin_peak is none or d.day_peak > d.checkin_peak) %}<span class="unit" title="day peak override">*</span>{% endif %}</div>
+        {% else %}<div class="v dim">—</div>{% endif %}
+      </div>
+      <span class="chev">›</span>
+    </a>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="card"><div class="empty-state">Nothing logged in the last {{ 14 }} days.</div></div>
+  {% endif %}
+</div>
+<script>
+  // The browser's UTC offset, so the civil date of a check-in follows the
+  // phone, not the server.
+  document.getElementById('tz_offset').value = String(-new Date().getTimezoneOffset());
+  // Sliders: mirror the value into the big readout, and hide the symptom
+  // detail while the intensity sits at 0 (data-zero; the CSS falls back to
+  // showing everything when this script never runs).
+  document.querySelectorAll('.slider input[type=range]').forEach(function (el) {
+    var out = el.parentElement.querySelector('.readout');
+    var form = el.form;
+    function sync() {
+      out.textContent = el.value;
+      if (el.name === 'intensity') form.dataset.zero = String(el.value === '0');
+    }
+    el.addEventListener('input', sync);
+    sync();
+  });
+  // Autosave for the per-day forms (intake, day note): POST the form itself
+  // with Accept: application/json, so the no-JS path (plain submit + 303) is
+  // untouched. Numbers save on change; the note saves after a typing pause
+  // and on blur. The Save button is hidden once this is wired up.
+  document.querySelectorAll('form[data-autosave]').forEach(function (form) {
+    var status = form.querySelector('.autosave-status');
+    var timer = null, inflight = null, dirty = false;
+    form.classList.add('autosaving');
+    function show(text, cls) {
+      status.textContent = text;
+      status.className = 'autosave-status ' + (cls || '');
+    }
+    function save() {
+      clearTimeout(timer); timer = null;
+      if (inflight) { dirty = true; return; }
+      dirty = false;
+      show('Saving…', 'busy');
+      inflight = fetch(form.action, {
+        method: 'POST',
+        body: new URLSearchParams(new FormData(form)),
+        headers: { 'Accept': 'application/json' },
+        credentials: 'same-origin'
+      }).then(function (r) { return r.json().then(function (j) { return { ok: r.ok && j.ok, j: j }; }); })
+        .then(function (res) { show(res.ok ? 'Saved' : (res.j.error || 'Could not save'), res.ok ? 'ok' : 'err'); })
+        .catch(function () { show('Offline, not saved', 'err'); })
+        .then(function () { inflight = null; if (dirty) save(); });
+    }
+    function later() { clearTimeout(timer); timer = setTimeout(save, 800); }
+    form.querySelectorAll('input[type=number]').forEach(function (el) {
+      el.addEventListener('change', save);
+    });
+    form.querySelectorAll('textarea').forEach(function (el) {
+      el.addEventListener('input', later);
+      el.addEventListener('blur', function () { if (timer) save(); });
+    });
+    form.addEventListener('submit', function (e) { e.preventDefault(); save(); });
+  });
+</script>
+{% endblock %}

@@ -16,7 +16,20 @@ client credentials are agenix-managed; refresh tokens persist under
 anduin extract <source> [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--dry-run]
 anduin auth <source>          # interactive OAuth seed (google-health, withings)
 anduin db migrate
+anduin remind headache [--dry-run]   # one ntfy check-in reminder (systemd timer)
+anduin serve [--host HOST] [--port PORT]
 ```
+
+## Headache journal
+
+The web UI's Log tab records headache *check-ins* (timestamp + 0-10 intensity,
+optional symptoms) rather than discrete attacks, plus per-day fluorescent-light
+exposure and an optional day-peak override. `anduin remind headache` publishes
+an ntfy notification whose "No headache" button POSTs a 0 straight back to
+anduin, so answering takes one tap. Config: `headache.app_url` (the URL the
+phone reaches anduin on), `headache.ntfy_url`, `headache.remind_skip_within_minutes`;
+secrets `NTFY_TOPIC` (the topic name is the only access control on public
+ntfy.sh) and optional `NTFY_TOKEN`. See docs/plans/2026-09-01-headache-log-design.md.
 
 ## Local dev database
 

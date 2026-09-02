@@ -8,11 +8,13 @@ pool-opening lifespan never runs.
 
 from __future__ import annotations
 
+import re
 from datetime import date, datetime, timedelta, timezone
 
 import pytest
 from fastapi.testclient import TestClient
 
+from anduin import journal
 from anduin.config import AppConfig, FileConfig, Secrets
 from anduin.web import goals, queries
 from anduin.web.app import create_app
@@ -46,7 +48,7 @@ def test_dashboard_renders(client, monkeypatch):
     # Patch the whole queries.home() bundle — home page uses sleep-hero design.
     monkeypatch.setattr(
         queries, "home",
-        lambda conn: {
+        lambda conn, uid, today: {
             "sleep": None,
             "hrv": None,
             "rhr": None,
@@ -59,6 +61,7 @@ def test_dashboard_renders(client, monkeypatch):
             "pmc": None,
             "bp": None,
             "workouts": [],
+            "headache": None,
         },
     )
     r = client.get("/")
@@ -73,7 +76,7 @@ def test_dashboard_renders(client, monkeypatch):
 def test_metrics_page_lists_all_metrics(client, monkeypatch):
     # Patch metric_index so the route doesn't need a real DB connection.
     def _fake_index(conn):
-        groups: dict = {"recovery": [], "body": [], "activity": []}
+        groups: dict = {"recovery": [], "body": [], "activity": [], "journal": []}
         for key, m in queries.METRICS.items():
             groups[m["group"]].append({
                 "key": key, "label": m["label"], "desc": m["desc"], "unit": m["unit"],
@@ -398,3 +401,267 @@ def test_the_target_field_is_marked_for_the_untargeted_kinds_rule(weight_page, m
     monkeypatch.setattr(goals, "current_goal", lambda conn, uid: None)
     r = weight_page.get("/metrics/body_weight")
     assert "goal-target" in r.text
+
+
+# --- headache journal (Log tab) ---------------------------------------------
+
+
+def _home_bundle(headache):
+    return {"sleep": None, "hrv": None, "rhr": None, "weight": None, "body_fat": None,
+            "steps": None, "step_goal": 10000, "hrv_status": None, "rhr_status": None,
+            "pmc": None, "bp": None, "workouts": [], "headache": headache}
+
+
+@pytest.fixture()
+def log_page(client, monkeypatch):
+    """A Log page with two check-ins today and no day context."""
+    rows = [
+        {"id": 1, "logged_at": _dt(2026, 9, 1, 13), "tz_offset_minutes": -240, "intensity": 2,
+         "nausea": 0, "light_sensitivity": False, "noise_sensitivity": False,
+         "qualities": ["pressure"], "note": None, "source": "ntfy",
+         "local_time": _dt(2026, 9, 1, 9)},
+        {"id": 2, "logged_at": _dt(2026, 9, 1, 19), "tz_offset_minutes": -240, "intensity": 7,
+         "nausea": 2, "light_sensitivity": True, "noise_sensitivity": False,
+         "qualities": ["throbbing", "unilateral"], "note": "left temple", "source": "app",
+         "local_time": _dt(2026, 9, 1, 15)},
+    ]
+    monkeypatch.setattr(journal, "checkins_for_day", lambda conn, uid, d: rows)
+    monkeypatch.setattr(journal, "day_context", lambda conn, uid, d: None)
+    monkeypatch.setattr(journal, "recent_days", lambda conn, uid, days=14: [
+        {"local_date": date(2026, 9, 1), "n_checkins": 2, "checkin_peak": 7, "day_peak": None,
+         "peak": 7, "mean_intensity": 4.5, "fluorescent_exposure": None,
+         "coffee_cups": 2, "alcohol_drinks": None},
+        {"local_date": date(2026, 8, 31), "n_checkins": 0, "checkin_peak": None, "day_peak": 8,
+         "peak": 8, "mean_intensity": None, "fluorescent_exposure": "hours",
+         "coffee_cups": None, "alcohol_drinks": 1},
+    ])
+    return client
+
+
+def test_log_tab_is_in_the_nav_everywhere(client, monkeypatch):
+    monkeypatch.setattr(queries, "home", lambda conn, uid, today: _home_bundle(None))
+    r = client.get("/")
+    assert 'href="/log"' in r.text and "LOG" in r.text
+
+
+def test_log_page_renders_the_scale_and_the_day(log_page):
+    r = log_page.get("/log")
+    assert r.status_code == 200
+    # Intensity is a slider (one input), not eleven buttons, on a phone.
+    assert r.text.count('name="intensity"') == 1
+    assert re.search(r'<input type="range" name="intensity"[^>]* min="0" max="10"', r.text)
+    assert re.search(r'<input type="range" name="peak"[^>]* min="0" max="10"', r.text)
+    assert 'name="coffee"' in r.text and 'name="alcohol"' in r.text
+    for q in journal.QUALITIES:
+        assert f'value="{q}"' in r.text
+    for f in journal.FLUORESCENT:
+        assert f'name="fluorescent" value="{f}"' in r.text
+    assert 'name="peak"' in r.text
+    assert "left temple" in r.text and "throbbing" in r.text
+    assert "/log/headache/2/delete" in r.text
+    # Recent list: the override-only day shows its peak and where it came from.
+    assert "/log?date=2026-08-31" in r.text
+
+
+def test_log_page_accepts_a_past_date(log_page, monkeypatch):
+    seen = {}
+    monkeypatch.setattr(journal, "checkins_for_day",
+                        lambda conn, uid, d: seen.setdefault("d", d) and [])
+    r = log_page.get("/log?date=2026-08-30")
+    assert r.status_code == 200 and seen["d"] == date(2026, 8, 30)
+
+
+def test_log_page_rejects_a_bad_date(log_page):
+    assert log_page.get("/log?date=yesterday").status_code == 400
+
+
+def test_saving_a_checkin_redirects_to_its_day(log_page, monkeypatch):
+    saved = {}
+
+    def _add(conn, uid, c):
+        saved.update(uid=uid, intensity=c.intensity, qualities=c.qualities, source=c.source)
+        return 9
+    monkeypatch.setattr(journal, "add_checkin", _add)
+    r = log_page.post("/log/headache",
+                      data={"intensity": "6", "nausea": "2", "light": "on",
+                            "qualities": ["throbbing", "unilateral"], "tz_offset": "-240"},
+                      follow_redirects=False)
+    assert r.status_code == 303
+    assert r.headers["location"].startswith("/log?date=")
+    assert saved["uid"] == 1 and saved["intensity"] == 6
+    assert saved["qualities"] == ["throbbing", "unilateral"] and saved["source"] == "app"
+
+
+def test_an_invalid_checkin_re_renders_with_the_error(log_page, monkeypatch):
+    monkeypatch.setattr(journal, "add_checkin", _unreachable)
+    r = log_page.post("/log/headache", data={"intensity": "11"})
+    assert r.status_code == 400
+    assert "between 0 and 10" in r.text
+    assert r.text.count('name="intensity"') == 1     # the form is still there
+
+
+def test_the_ntfy_button_posts_a_zero_and_gets_json(client, monkeypatch):
+    saved = {}
+
+    def _add(conn, uid, c):
+        saved.update(intensity=c.intensity, source=c.source)
+        return 3
+    monkeypatch.setattr(journal, "add_checkin", _add)
+    r = client.post("/api/log/headache", data={"intensity": "0", "source": "ntfy"})
+    assert r.status_code == 200 and r.json() == {"ok": True, "id": 3}
+    assert saved == {"intensity": 0, "source": "ntfy"}
+
+
+def test_the_api_defaults_the_source_to_ntfy(client, monkeypatch):
+    saved = {}
+    monkeypatch.setattr(journal, "add_checkin", lambda conn, uid, c: saved.update(source=c.source) or 4)
+    client.post("/api/log/headache", data={"intensity": "0"})
+    assert saved["source"] == "ntfy"
+
+
+def test_the_api_returns_json_errors_not_html(client, monkeypatch):
+    monkeypatch.setattr(journal, "add_checkin", _unreachable)
+    r = client.post("/api/log/headache", data={"intensity": "x"})
+    assert r.status_code == 400
+    assert "error" in r.json() and "<html" not in r.text
+
+
+def test_a_double_tap_is_still_ok(client, monkeypatch):
+    monkeypatch.setattr(journal, "add_checkin", lambda conn, uid, c: None)
+    r = client.post("/api/log/headache", data={"intensity": "0"})
+    assert r.status_code == 200 and r.json()["ok"] is True
+
+
+def test_deleting_a_checkin_redirects_back_to_the_day(client, monkeypatch):
+    gone = []
+    monkeypatch.setattr(journal, "delete_checkin", lambda conn, uid, cid: gone.append((uid, cid)))
+    r = client.post("/log/headache/2/delete", data={"date": "2026-09-01"}, follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == "/log?date=2026-09-01"
+    assert gone == [(1, 2)]
+
+
+def test_setting_the_day_context_upserts_only_that_field(client, monkeypatch):
+    saved = {}
+    monkeypatch.setattr(journal, "set_day_context",
+                        lambda conn, uid, d, fields: saved.update(d=d, **fields))
+    r = client.post("/log/day", data={"date": "2026-09-01", "fluorescent": "hours"},
+                    follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == "/log?date=2026-09-01"
+    assert saved == {"d": date(2026, 9, 1), "fluorescent_exposure": "hours"}
+
+
+def test_clearing_the_day_peak_sends_null(client, monkeypatch):
+    saved = {}
+    monkeypatch.setattr(journal, "set_day_context",
+                        lambda conn, uid, d, fields: saved.update(fields))
+    client.post("/log/day", data={"date": "2026-09-01", "peak": ""}, follow_redirects=False)
+    assert saved == {"peak_intensity": None}
+
+
+def test_intake_form_saves_both_counts(client, monkeypatch):
+    saved = {}
+    monkeypatch.setattr(journal, "set_day_context",
+                        lambda conn, uid, d, fields: saved.update(fields))
+    r = client.post("/log/day", data={"date": "2026-09-01", "coffee": "3", "alcohol": ""},
+                    follow_redirects=False)
+    assert r.status_code == 303
+    assert saved == {"coffee_cups": 3, "alcohol_drinks": None}
+
+
+def test_day_note_is_shown_prefilled_and_saved(log_page, monkeypatch):
+    monkeypatch.setattr(journal, "day_context", lambda conn, uid, d: {
+        "fluorescent_exposure": None, "peak_intensity": None, "coffee_cups": None,
+        "alcohol_drinks": None, "note": "slept badly, office in the afternoon"})
+    r = log_page.get("/log")
+    assert 'name="daynote"' in r.text
+    assert "slept badly, office in the afternoon</textarea>" in r.text
+    saved = {}
+    monkeypatch.setattr(journal, "set_day_context",
+                        lambda conn, uid, d, fields: saved.update(fields))
+    r = log_page.post("/log/day", data={"date": "2026-09-01", "daynote": " new note "},
+                      follow_redirects=False)
+    assert r.status_code == 303 and saved == {"note": "new note"}
+
+
+def test_autosave_gets_json_instead_of_a_redirect(client, monkeypatch):
+    """The autosave script POSTs the same form with Accept: application/json;
+    it needs a body it can read, not a 303 to the page."""
+    saved = {}
+    monkeypatch.setattr(journal, "set_day_context",
+                        lambda conn, uid, d, fields: saved.update(fields))
+    r = client.post("/log/day", data={"date": "2026-09-01", "coffee": "2", "alcohol": ""},
+                    headers={"Accept": "application/json"}, follow_redirects=False)
+    assert r.status_code == 200
+    assert r.json() == {"ok": True, "saved": {"coffee_cups": 2, "alcohol_drinks": None}}
+    assert saved == {"coffee_cups": 2, "alcohol_drinks": None}
+
+
+def test_autosave_errors_are_json_too(client, monkeypatch):
+    monkeypatch.setattr(journal, "set_day_context", _unreachable)
+    r = client.post("/log/day", data={"date": "2026-09-01", "coffee": "99"},
+                    headers={"Accept": "application/json"})
+    assert r.status_code == 400
+    assert r.json()["ok"] is False and "coffee" in r.json()["error"]
+
+
+def test_the_day_forms_are_marked_for_autosave(log_page):
+    r = log_page.get("/log")
+    assert r.text.count(" data-autosave ") == 2   # the two forms, not the script's selector
+
+
+def test_a_bad_day_context_re_renders_with_the_error(log_page, monkeypatch):
+    monkeypatch.setattr(journal, "set_day_context", _unreachable)
+    r = log_page.post("/log/day", data={"date": "2026-09-01", "fluorescent": "lots"})
+    assert r.status_code == 400 and "fluorescent" in r.text
+
+
+def test_metrics_page_has_a_journal_group(client, monkeypatch):
+    def _fake_index(conn):
+        return {"recovery": [], "body": [], "activity": [], "journal": [{
+            "key": "headache_peak", "label": "Headache", "desc": "Daily peak intensity",
+            "unit": "", "color": "#ef6b5e", "group": "journal", "digits": 0,
+            "value": 6.0, "delta": None, "dir": "flat", "per_week": None, "spark": "",
+        }]}
+    monkeypatch.setattr(queries, "metric_index", _fake_index)
+    r = client.get("/metrics")
+    assert "Journal" in r.text and "/metrics/headache_peak" in r.text
+
+
+def test_home_shows_todays_headache_row(client, monkeypatch):
+    monkeypatch.setattr(queries, "home", lambda conn, uid, today: _home_bundle(
+        {"local_date": date(2026, 9, 1), "n_checkins": 2, "peak": 6, "checkin_peak": 6, "day_peak": None}))
+    r = client.get("/")
+    assert "Headache" in r.text and 'href="/log"' in r.text
+    assert "6" in r.text
+
+
+def test_home_nudges_when_nothing_is_logged_today(client, monkeypatch):
+    monkeypatch.setattr(queries, "home", lambda conn, uid, today: _home_bundle(None))
+    r = client.get("/")
+    assert "Not logged today" in r.text
+
+
+# --- static asset cache-busting ---------------------------------------------
+
+
+def test_asset_version_tracks_content_not_mtime(tmp_path, monkeypatch):
+    """Nix sets every store file's mtime to 1, so an mtime-based token was
+    `?v=1` for every deploy and phones kept a stale app.css after a UI change.
+    The token must change when a file's *content* changes, mtime untouched."""
+    from anduin.web import app as app_mod
+
+    static = tmp_path / "static"
+    static.mkdir()
+    css = static / "app.css"
+    css.write_text("a{}")
+    import os
+    os.utime(css, (1, 1))
+    monkeypatch.setattr(app_mod, "_STATIC_DIR", static)
+    v1 = app_mod._asset_version()
+    css.write_text("a{color:red}")
+    os.utime(css, (1, 1))
+    v2 = app_mod._asset_version()
+    assert v1 != v2
+    css.write_text("a{}")
+    os.utime(css, (1, 1))
+    assert app_mod._asset_version() == v1

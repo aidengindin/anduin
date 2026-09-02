@@ -3,6 +3,8 @@
     anduin extract <source> [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--dry-run]
     anduin auth <source>
     anduin db migrate
+    anduin remind headache [--dry-run]
+    anduin serve [--host HOST] [--port PORT]
 
 Exits non-zero if any source reports errors.
 """
@@ -17,6 +19,7 @@ from datetime import date, datetime, timedelta, timezone
 
 from anduin import config as cfg_mod
 from anduin import db as db_mod
+from anduin import remind
 from anduin import state as state_mod
 from anduin.http import make_client
 from anduin.sources import google_health, intervals, liftosaur, withings
@@ -44,6 +47,10 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
 
     dbp = sub.add_parser("db")
     dbp.add_argument("action", choices=("migrate",))
+
+    rm = sub.add_parser("remind")
+    rm.add_argument("what", choices=("headache",))
+    rm.add_argument("--dry-run", action="store_true")
 
     sv = sub.add_parser("serve")
     sv.add_argument("--host", default="127.0.0.1")
@@ -146,6 +153,20 @@ def _run_auth(args: argparse.Namespace, app: cfg_mod.AppConfig) -> int:
     return 0
 
 
+def _run_remind(args: argparse.Namespace, app: cfg_mod.AppConfig) -> int:
+    # Dry-run logs the payload and never touches the database (same guard as
+    # extract). The wet path needs dict rows: journal.py is written for the
+    # web pool's row factory and this is the one CLI caller sharing it.
+    with ExitStack() as stack:
+        http = stack.enter_context(make_client())
+        conn = (
+            None
+            if args.dry_run
+            else stack.enter_context(db_mod.connect_dict(app.secrets.database_url))
+        )
+        return remind.run(http, conn, app, dry_run=args.dry_run)
+
+
 def _run_serve(args: argparse.Namespace, app: cfg_mod.AppConfig) -> int:
     # Lazy import: the web stack (FastAPI/uvicorn) is only needed for `serve`,
     # so the extractor path never pays for importing it (mirrors auth's lazy
@@ -179,6 +200,8 @@ def main(argv: list[str] | None = None) -> int:
         n = db_mod.migrate(app.secrets.database_url)
         logger.info("applied %d migrations", n)
         return 0
+    if args.cmd == "remind":
+        return _run_remind(args, app)
     if args.cmd == "serve":
         return _run_serve(args, app)
     logger.error("unknown command: %s", args.cmd)

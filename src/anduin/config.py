@@ -34,6 +34,12 @@ class Secrets(BaseSettings):
 
     liftosaur_api_key: str = ""
 
+    # Headache reminders. On public ntfy.sh the topic name is the only access
+    # control, so it lives here with the secrets; the token is for a
+    # self-hosted / access-controlled server later and may stay empty.
+    ntfy_topic: str = ""
+    ntfy_token: str = ""
+
     database_url: str = Field(min_length=1)
 
     # Dev override for the state dir (where OAuth tokens are persisted). Lets you
@@ -69,6 +75,18 @@ class LiftosaurConfig(BaseModel):
     window_days: int = 7
 
 
+class HeadacheConfig(BaseModel):
+    """Check-in reminders (``anduin remind headache``). The schedule itself is
+    the systemd timer's; this is what one run needs."""
+    enabled: bool = True
+    ntfy_url: str = "https://ntfy.sh"
+    # The URL the *phone* reaches anduin on (tailnet). Both action buttons point
+    # here, so it must be routable from the ntfy client, not just from the host.
+    app_url: str = ""
+    # A reminder is pointless right after a check-in; skip inside this window.
+    remind_skip_within_minutes: int = 120
+
+
 class FileConfig(BaseModel):
     state_dir: Path = Path("/var/lib/anduin/state")
     # Owner of every ingested row. anduin is single-user today; the extractors
@@ -80,6 +98,7 @@ class FileConfig(BaseModel):
     withings: WithingsConfig = WithingsConfig()
     intervals: IntervalsConfig = IntervalsConfig()
     liftosaur: LiftosaurConfig = LiftosaurConfig()
+    headache: HeadacheConfig = HeadacheConfig()
 
 
 @dataclass

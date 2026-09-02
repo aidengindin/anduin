@@ -9,7 +9,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from psycopg import Connection
 
 from anduin.web import goals, queries
-from anduin.web.deps import get_conn, parse_range
+from anduin.web.deps import get_conn, parse_range, user_id
 from anduin.web.templating import templates
 
 router = APIRouter()
@@ -40,12 +40,6 @@ def blood_pressure_page(request: Request, conn: Connection = Depends(get_conn)) 
     )
 
 
-def _user_id(request: Request) -> int:
-    """Owner of every row. Single-user today; the id is configured, never
-    defaulted at the DB level (see CLAUDE.md)."""
-    return request.app.state.config.file.user_id
-
-
 def _render_metric_page(
     request: Request, conn: Connection, metric: str,
     since: str | None, until: str | None,
@@ -67,7 +61,7 @@ def _render_metric_page(
     # Body weight is the only metric carrying a goal: it is the one the owner
     # steers day to day, and the corridor only makes sense against a rate target.
     if metric == "body_weight":
-        goal = goals.current_goal(conn, _user_id(request))
+        goal = goals.current_goal(conn, user_id(request))
         ctx["goal"] = goal
         ctx["goal_status"] = queries.weight_goal_status(conn, goal)
         ctx["goal_error"] = goal_error
@@ -99,7 +93,7 @@ async def set_weight_goal(
             request, conn, "body_weight", None, None,
             goal_error=str(exc), status_code=400,
         )
-    goals.set_goal(conn, _user_id(request), kind, target)
+    goals.set_goal(conn, user_id(request), kind, target)
     return RedirectResponse("/metrics/body_weight", status_code=303)
 
 
@@ -122,5 +116,5 @@ def metric_data(
     if metric not in queries.METRICS:
         raise HTTPException(status_code=404, detail=f"unknown metric: {metric}")
     start, end = parse_range(since, until, default_days=30)
-    goal = goals.current_goal(conn, _user_id(request)) if metric == "body_weight" else None
+    goal = goals.current_goal(conn, user_id(request)) if metric == "body_weight" else None
     return JSONResponse(queries.metric_series(conn, metric, start, end, goal))
