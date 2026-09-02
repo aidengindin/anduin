@@ -112,23 +112,24 @@
 
   <form method="post" action="/log/day" class="card intake" data-autosave style="margin-top:12px;">
     <input type="hidden" name="date" value="{{ day.isoformat() }}">
+    <div class="row-between" style="margin-bottom:8px;"><span class="stat-label">Intake</span><span class="autosave-status" aria-live="polite"></span></div>
     <div class="grid c2">
-      <label><span class="stat-label">Coffee</span>
+      <label><span class="stat-label sub">Coffee</span>
         <input class="field num" type="number" name="coffee" inputmode="numeric" min="0" max="20" step="1"
                placeholder="cups" value="{{ context.coffee_cups if context.coffee_cups is not none else '' }}"></label>
-      <label><span class="stat-label">Alcohol</span>
+      <label><span class="stat-label sub">Alcohol</span>
         <input class="field num" type="number" name="alcohol" inputmode="numeric" min="0" max="20" step="1"
                placeholder="drinks" value="{{ context.alcohol_drinks if context.alcohol_drinks is not none else '' }}"></label>
     </div>
-    <div class="save-row"><button type="submit" class="btn">Save intake</button><span class="autosave-status" aria-live="polite"></span></div>
+    <div class="save-row"><button type="submit" class="btn">Save intake</button></div>
   </form>
 
   <form method="post" action="/log/day" class="card" data-autosave style="margin-top:12px;">
     <input type="hidden" name="date" value="{{ day.isoformat() }}">
-    <label class="stat-label" for="daynote" style="display:block;margin-bottom:6px;">Day note</label>
+    <div class="row-between" style="margin-bottom:8px;"><label class="stat-label" for="daynote">Day note</label><span class="autosave-status" aria-live="polite"></span></div>
     <textarea class="field" id="daynote" name="daynote" rows="2" maxlength="500"
               placeholder="Anything about the day worth remembering">{{ context.note or '' }}</textarea>
-    <div class="save-row"><button type="submit" class="btn">Save note</button><span class="autosave-status" aria-live="polite"></span></div>
+    <div class="save-row"><button type="submit" class="btn">Save note</button></div>
   </form>
 
   {% if checkins %}
