@@ -18,7 +18,7 @@ from anduin.web import queries
 from anduin.web.db import make_pool
 from anduin.web.deps import get_conn
 from anduin.web.prometheus import CONTENT_TYPE, render_ingest_metrics
-from anduin.web.routes import dashboard, metrics, workouts
+from anduin.web.routes import dashboard, log, metrics, workouts
 from anduin.web.templating import templates
 
 _STATIC_DIR = Path(__file__).parent / "static"
@@ -57,6 +57,7 @@ def create_app(config: AppConfig) -> FastAPI:
 
     app.include_router(dashboard.router)
     app.include_router(metrics.router)
+    app.include_router(log.router)
     app.include_router(workouts.router)
 
     @app.get("/healthz", include_in_schema=False)

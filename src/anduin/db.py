@@ -14,6 +14,7 @@ from typing import Iterator
 
 import psycopg
 from psycopg import Connection
+from psycopg.rows import dict_row
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +22,14 @@ logger = logging.getLogger(__name__)
 @contextmanager
 def connect(dsn: str) -> Iterator[Connection]:
     with psycopg.connect(dsn, autocommit=False) as conn:
+        yield conn
+
+
+@contextmanager
+def connect_dict(dsn: str) -> Iterator[Connection]:
+    """Like :func:`connect` but with dict rows and autocommit -- the shape the
+    web pool gives ``journal.py``, so CLI callers (the reminder) can share it."""
+    with psycopg.connect(dsn, autocommit=True, row_factory=dict_row) as conn:
         yield conn
 
 

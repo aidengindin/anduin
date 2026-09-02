@@ -18,7 +18,7 @@ from psycopg import Connection
 # metric keys arrive via the URL and are validated against this dict, so the
 # view/column names are never interpolated from untrusted input.
 #
-#   group   recovery | body | activity  (drives the Metrics-page sections)
+#   group   recovery | body | activity | journal  (drives the Metrics-page sections)
 #   better  high | low | None           (which direction is "good", for deltas)
 METRICS: dict[str, dict[str, Any]] = {
     "hrv": {
@@ -114,6 +114,15 @@ METRICS: dict[str, dict[str, Any]] = {
         "group": "activity", "color": "#f6bd62", "view": "canonical.activity_daily",
         "date_col": "local_date", "value_col": "value", "digits": 0, "better": "high",
         "where": "metric = 'active_calories' AND kind = 'workout'", "zero_fill": True,
+    },
+    # Headache journal. The value is the day's peak: the greater of what the
+    # check-ins saw and the day-level override (derived.headache_daily). A day
+    # with no check-ins is UNKNOWN, not headache-free -- never zero_fill this.
+    "headache_peak": {
+        "label": "Headache", "desc": "Daily peak intensity", "unit": "", "group": "journal",
+        "color": "#ef6b5e", "view": "derived.headache_daily",
+        "date_col": "local_date", "value_col": "peak", "digits": 0, "better": "low",
+        "min_bucket": "1 day",
     },
     "form": {
         "label": "Form (TSB)", "desc": "Fitness − fatigue", "unit": "", "group": "activity",
@@ -382,7 +391,21 @@ def blood_pressure_row(conn: Connection) -> dict[str, Any] | None:
 # --- home ------------------------------------------------------------------
 
 
-def home(conn: Connection) -> dict[str, Any]:
+def headache_today(conn: Connection, user_id: int, local_date: date) -> dict[str, Any] | None:
+    """The day's row from derived.headache_daily, or None if nothing was logged.
+    Takes user_id because the journal tables are the first the UI reads
+    per-user; the rest of the read path still assumes the single owner."""
+    with conn.cursor() as cur:
+        cur.execute("""
+            SELECT local_date, n_checkins, checkin_peak, day_peak, peak
+            FROM derived.headache_daily
+            WHERE user_id = %(user_id)s AND local_date = %(local_date)s
+        """, {"user_id": user_id, "local_date": local_date})
+        row = cur.fetchone()
+    return dict(row) if row else None
+
+
+def home(conn: Connection, user_id: int = 1, today: date | None = None) -> dict[str, Any]:
     """Everything the 1a sleep-hero home needs. Any piece may be None (no data
     yet), and the template renders a graceful empty state for it."""
     out: dict[str, Any] = {}
@@ -420,6 +443,7 @@ def home(conn: Connection) -> dict[str, Any]:
         out["bp"] = cur.fetchone()
 
     out["workouts"] = list_workouts_recent(conn, limit=3)
+    out["headache"] = headache_today(conn, user_id, today or date.today())
     return out
 
 
@@ -435,7 +459,9 @@ def _status(conn: Connection, view: str, col: str) -> str | None:
 
 def metric_index(conn: Connection) -> dict[str, list[dict[str, Any]]]:
     """Cards for every metric, grouped for the Metrics page."""
-    groups: dict[str, list[dict[str, Any]]] = {"recovery": [], "body": [], "activity": []}
+    groups: dict[str, list[dict[str, Any]]] = {
+        "recovery": [], "body": [], "activity": [], "journal": [],
+    }
     for key, m in METRICS.items():
         card = _card(conn, key)
         if card is None:

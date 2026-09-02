@@ -443,7 +443,9 @@ def test_the_anchor_window_never_reaches_back_before_the_phase():
 COUNTERS = ["steps", "steps_neat", "steps_workout",
             "active_calories", "active_calories_neat", "active_calories_workout"]
 POINT_IN_TIME = ["body_weight", "body_fat_ratio", "muscle_mass", "fat_free_mass",
-                 "hrv", "resting_heart_rate", "spo2", "skin_temp"]
+                 "hrv", "resting_heart_rate", "spo2", "skin_temp",
+                 # A day with no check-ins is unknown, not headache-free.
+                 "headache_peak"]
 
 
 @pytest.mark.parametrize("key", COUNTERS)
@@ -508,3 +510,30 @@ def test_skin_temp_reads_the_daily_derivation_view():
     m = queries.METRICS["skin_temp"]
     assert m["view"] == "canonical.skin_temp_daily"
     assert (m["date_col"], m["value_col"]) == ("local_date", "variation_c")
+
+
+# --- headache journal metric ------------------------------------------------
+
+
+def test_headache_metric_is_a_daily_journal_metric():
+    m = queries.METRICS["headache_peak"]
+    assert m["group"] == "journal"
+    assert m["view"] == "derived.headache_daily" and m["value_col"] == "peak"
+    assert m["min_bucket"] == "1 day"       # check-ins roll up per civil day
+    assert m["better"] == "low"
+
+
+def test_home_reads_todays_headache_row():
+    # The home() bundle is a long scripted sequence; only the headache read is
+    # asserted here, by shape, via the helper it delegates to.
+    conn = FakeConn([{"local_date": date(2026, 9, 1), "n_checkins": 2, "peak": 6,
+                      "checkin_peak": 6, "day_peak": None}])
+    row = queries.headache_today(conn, 1, date(2026, 9, 1))
+    assert row["peak"] == 6 and row["n_checkins"] == 2
+    sql, params = conn._cursor.executed[0]
+    assert "derived.headache_daily" in sql
+    assert params == {"user_id": 1, "local_date": date(2026, 9, 1)}
+
+
+def test_home_headache_is_none_when_nothing_was_logged_today():
+    assert queries.headache_today(FakeConn([None]), 1, date(2026, 9, 1)) is None

@@ -9,7 +9,7 @@ from fastapi.responses import HTMLResponse
 from psycopg import Connection
 
 from anduin.web import queries
-from anduin.web.deps import get_conn
+from anduin.web.deps import get_conn, user_id
 from anduin.web.templating import templates
 
 router = APIRouter()
@@ -17,8 +17,8 @@ router = APIRouter()
 
 @router.get("/", response_class=HTMLResponse)
 def home(request: Request, conn: Connection = Depends(get_conn)) -> HTMLResponse:
-    data = queries.home(conn)
     now = datetime.now().astimezone()
+    data = queries.home(conn, user_id(request), now.date())
     hour = now.hour
     greeting = "Good morning" if hour < 12 else "Good afternoon" if hour < 18 else "Good evening"
     return templates.TemplateResponse(

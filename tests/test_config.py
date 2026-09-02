@@ -43,3 +43,27 @@ def test_anduin_state_dir_beats_systemd_state_directory(tmp_path, monkeypatch):
     monkeypatch.setenv("ANDUIN_STATE_DIR", str(tmp_path / "dev-state"))
     app = load()
     assert app.file.state_dir == tmp_path / "dev-state"
+
+
+def test_headache_reminder_config_defaults(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("ANDUIN_CONFIG", raising=False)
+    monkeypatch.delenv("NTFY_TOPIC", raising=False)
+    monkeypatch.delenv("NTFY_TOKEN", raising=False)
+    monkeypatch.setenv("DATABASE_URL", "postgresql://x")
+    app = load()
+    h = app.file.headache
+    assert h.enabled is True
+    assert h.ntfy_url == "https://ntfy.sh"
+    assert h.app_url == ""
+    assert h.remind_skip_within_minutes == 120
+    # The topic name is the only access control on public ntfy.sh, so it is a
+    # secret (env), not a config-file value.
+    assert app.secrets.ntfy_topic == "" and app.secrets.ntfy_token == ""
+
+
+def test_ntfy_topic_comes_from_the_environment(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("DATABASE_URL", "postgresql://x")
+    monkeypatch.setenv("NTFY_TOPIC", "anduin-abc123")
+    assert Secrets().ntfy_topic == "anduin-abc123"

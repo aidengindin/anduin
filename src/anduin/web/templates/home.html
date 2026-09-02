@@ -71,6 +71,18 @@
 </a>
 {% endif %}
 
+{# ---- headache journal ---- #}
+<a class="card" href="/log" style="display:block;margin-top:12px;">
+  <div class="row-between">
+    <span class="stat-label">Headache</span>
+    {% if headache and headache.peak is not none %}
+    <span class="num" style="color:var(--text);font-weight:700;font-size:20px;">{{ headache.peak }}<span class="unit"> peak · {{ headache.n_checkins }} check-in{{ '' if headache.n_checkins == 1 else 's' }}</span></span>
+    {% else %}
+    <span class="muted" style="font-size:12.5px;">Not logged today · Log ›</span>
+    {% endif %}
+  </div>
+</a>
+
 {# ---- recent workouts ---- #}
 <div class="section">
   <div class="section-label">Recent workouts <a href="/workouts">All ›</a></div>

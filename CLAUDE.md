@@ -156,6 +156,37 @@ by week 20 of a 0.4 lb/wk bulk), never re-anchored — so one bad fortnight
 displaced it permanently — and silently measured *cumulative* progress while the
 chip measured recent rate. Don't reintroduce it.
 
+### Headache journal: check-ins, not attacks
+
+`journal.*` holds what the owner types in (as opposed to `raw`, what a device
+said). A headache **check-in** is "how is my head right now" -- a timestamp and
+a 0-10 intensity with optional detail -- not an attack with a start and an end.
+A day is a small series of check-ins; `derived.headache_daily` derives peak /
+mean per civil day, with `journal.headache_days.peak_intensity` as an optional
+override for a flare that fell between check-ins (`peak = greatest(...)`).
+
+Rules that must hold:
+
+- **A day with no check-ins is unknown, not zero.** `headache_peak` is never
+  `zero_fill`ed and the view's `peak` is NULL for a context-only day. Only a
+  logged 0 means headache-free.
+- `local_date` is **stamped by the write path** from the browser's UTC offset
+  (`tz_offset`, filled by the page's small script, which also drives the
+  intensity slider's readout), falling back to the server's zone for the ntfy
+  button, which has no browser. Don't recompute it in SQL.
+- Daily intake (`coffee_cups`, `alcohol_drinks`) is NULL when not recorded,
+  not 0; the intake form submits both together, empty meaning "clear".
+- `source` (`app` / `ntfy`) is kept so compliance can be measured; the ntfy
+  "No headache" action posts straight to `/api/log/headache`, so every range
+  and enum is a DB CHECK, not just form validation.
+- `journal.py` functions expect **dict rows** and the caller's autocommit (the
+  web pool, or `db.connect_dict` for `anduin remind`). `db.connect` gives tuple
+  rows and will break them.
+- Medication tracking is deliberately absent (separate future feature); the
+  column is `qualities`, not `character` (a SQL type name).
+
+See docs/plans/2026-09-01-headache-log-design.md.
+
 ### Extending a view: append, never reorder
 
 `CREATE OR REPLACE VIEW` can only **append** columns. Postgres refuses to

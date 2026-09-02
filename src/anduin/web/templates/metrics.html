@@ -9,7 +9,7 @@
   </div>
 </div>
 
-{% set sections = [("recovery", "Recovery"), ("body", "Body"), ("activity", "Activity")] %}
+{% set sections = [("recovery", "Recovery"), ("body", "Body"), ("activity", "Activity"), ("journal", "Journal")] %}
 {% for key, title in sections %}
   {% if groups[key] %}
   <div class="section-label" {% if not loop.first %}style="margin-top:22px;"{% endif %}>{{ title }}</div>

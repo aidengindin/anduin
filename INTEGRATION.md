@@ -142,6 +142,12 @@ let
       enabled = cfg.liftosaur.enable;
       window_days = cfg.liftosaur.windowDays;
     };
+    headache = {
+      enabled = cfg.headache.enable;
+      app_url = cfg.headache.appUrl;
+      ntfy_url = cfg.headache.ntfyUrl;
+      remind_skip_within_minutes = cfg.headache.skipWithinMinutes;
+    };
   });
 
   hardening = {
@@ -231,6 +237,22 @@ in {
       ]; };
       windowDays = mkOption { type = types.ints.positive; default = 7; };
     };
+    headache = {
+      enable = mkEnableOption "headache check-in reminders over ntfy";
+      # Local wall-clock times; the timer runs in the host's time.timeZone,
+      # which must be the owner's zone (ntfy-sourced check-ins take the
+      # server's civil date -- see docs/plans/2026-09-01-headache-log-design.md).
+      schedule = mkOption { type = types.listOf types.str; default = [
+        "*-*-* 09,13,17,21:00:00"
+      ]; };
+      # The URL the *phone* reaches anduin on (tailnet). Both notification
+      # buttons point here, so it must be routable from the ntfy client:
+      # `anduin serve` binds 127.0.0.1 with no TLS, so this is the reverse
+      # proxy / Tailscale Serve address, not the uvicorn one.
+      appUrl = mkOption { type = types.str; example = "https://osgiliath.tail1234.ts.net"; };
+      ntfyUrl = mkOption { type = types.str; default = "https://ntfy.sh"; };
+      skipWithinMinutes = mkOption { type = types.ints.positive; default = 120; };
+    };
   };
 
   config = mkIf cfg.enable {
@@ -268,6 +290,30 @@ in {
       (mkExtractor "intervals" cfg.intervals.schedule);
     systemd.services.anduin-liftosaur = mkIf cfg.liftosaur.enable
       (mkExtractor "liftosaur" cfg.liftosaur.schedule);
+
+    # Reminder: same env file + config as the extractors, no state dir. No
+    # RandomizedDelaySec -- a check-in prompt should land at the time chosen.
+    systemd.services.anduin-remind-headache = mkIf cfg.headache.enable {
+      description = "anduin headache check-in reminder (ntfy)";
+      after = [ "network-online.target" "anduin-db-migrate.service" ];
+      wants = [ "network-online.target" ];
+      serviceConfig = hardening // {
+        Type = "oneshot";
+        User = cfg.user;
+        Group = cfg.group;
+        EnvironmentFile = cfg.environmentFile;
+        Environment = [ "ANDUIN_CONFIG=${configJson}" ];
+        ExecStart = "${cfg.package}/bin/anduin remind headache";
+      };
+    };
+    systemd.timers.anduin-remind-headache = mkIf cfg.headache.enable {
+      wantedBy = [ "timers.target" ];
+      timerConfig = {
+        OnCalendar = cfg.headache.schedule;
+        Persistent = false;   # a missed 9am prompt should not fire at 3pm
+        Unit = "anduin-remind-headache.service";
+      };
+    };
 
     systemd.timers.anduin-google-health = mkIf cfg.google-health.enable {
       wantedBy = [ "timers.target" ];
@@ -308,6 +354,12 @@ INTERVALS_API_KEY=...
 INTERVALS_ATHLETE_ID=i95355
 
 LIFTOSAUR_API_KEY=...
+
+# Headache reminders. On public ntfy.sh the topic name is the only access
+# control, so it is a secret: pick something unguessable (e.g. `openssl rand
+# -hex 12`) and subscribe the phone's ntfy app to it. NTFY_TOKEN is optional
+# (self-hosted server with ACLs); leave it out on ntfy.sh.
+NTFY_TOPIC=anduin-<random>
 ```
 
 Declare ACL in `secrets/secrets.nix`:
@@ -471,6 +523,15 @@ restic snapshots --tag osgiliath | head      # the dump dir is covered
   grep the rest of `hosts/osgiliath/` for any conflicts before committing.
 - `nixos-container` requires the host's `boot.enableContainers = true`
   (usually the default). Confirm on osgiliath.
+- Headache reminders: `headache.appUrl` must be reachable from the phone's
+  ntfy client (tailnet + reverse proxy / Tailscale Serve in front of the
+  `127.0.0.1` uvicorn bind). `/api/log/headache` is unauthenticated like every
+  other route, so it must not be exposed beyond the tailnet. The host's
+  `time.timeZone` must be the owner's zone. After deploy: `anduin remind
+  headache --dry-run` as the service user prints the payload; a real run
+  should produce a notification with "No headache" and "Log" buttons, and
+  tapping "No headache" must leave a `source = 'ntfy'` row in
+  `journal.headache_checkins` for today.
 
 ## Things that are intentionally out of scope
 
