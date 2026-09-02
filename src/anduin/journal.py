@@ -178,8 +178,10 @@ def parse_day_context(form: Mapping[str, Any]) -> dict[str, Any]:
         if key in form:
             raw = str(form.get(key) or "").strip()
             out[col] = _int(form, key, 0, INTAKE_MAX) if raw else None
-    if "note" in form:
-        out["note"] = _note(form)
+    # "daynote", because the check-in form already uses "note" and the two
+    # must never be confused on the wire.
+    if "daynote" in form:
+        out["note"] = _note(form, "daynote")
     if not out:
         raise JournalError("nothing to save")
     return out

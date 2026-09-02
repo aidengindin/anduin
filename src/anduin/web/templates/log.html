@@ -123,6 +123,14 @@
     <button type="submit" class="btn" style="margin-top:10px;width:100%;">Save intake</button>
   </form>
 
+  <form method="post" action="/log/day" class="card" style="margin-top:12px;">
+    <input type="hidden" name="date" value="{{ day.isoformat() }}">
+    <label class="stat-label" for="daynote" style="display:block;margin-bottom:6px;">Day note</label>
+    <textarea class="field" id="daynote" name="daynote" rows="2" maxlength="500"
+              placeholder="Anything about the day worth remembering">{{ context.note or '' }}</textarea>
+    <button type="submit" class="btn" style="margin-top:10px;width:100%;">Save note</button>
+  </form>
+
   {% if checkins %}
   <div class="card" style="margin-top:12px;padding-bottom:8px;">
     <svg class="timeline" viewBox="0 0 240 40" preserveAspectRatio="none">

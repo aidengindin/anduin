@@ -270,6 +270,7 @@ a.row:hover { background: var(--card2); }
 /* iOS Safari sizes date/time inputs from their intrinsic width and ignores
    width:100% unless the native appearance is reset, which overflowed the
    check-in card on the phone. */
+textarea.field { resize: vertical; line-height: 1.45; }
 .field[type="datetime-local"], .field[type="number"] {
   -webkit-appearance: none; appearance: none;
   display: block; min-width: 0; max-width: 100%; min-height: 40px;

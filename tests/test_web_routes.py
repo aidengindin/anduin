@@ -568,6 +568,21 @@ def test_intake_form_saves_both_counts(client, monkeypatch):
     assert saved == {"coffee_cups": 3, "alcohol_drinks": None}
 
 
+def test_day_note_is_shown_prefilled_and_saved(log_page, monkeypatch):
+    monkeypatch.setattr(journal, "day_context", lambda conn, uid, d: {
+        "fluorescent_exposure": None, "peak_intensity": None, "coffee_cups": None,
+        "alcohol_drinks": None, "note": "slept badly, office in the afternoon"})
+    r = log_page.get("/log")
+    assert 'name="daynote"' in r.text
+    assert "slept badly, office in the afternoon</textarea>" in r.text
+    saved = {}
+    monkeypatch.setattr(journal, "set_day_context",
+                        lambda conn, uid, d, fields: saved.update(fields))
+    r = log_page.post("/log/day", data={"date": "2026-09-01", "daynote": " new note "},
+                      follow_redirects=False)
+    assert r.status_code == 303 and saved == {"note": "new note"}
+
+
 def test_a_bad_day_context_re_renders_with_the_error(log_page, monkeypatch):
     monkeypatch.setattr(journal, "set_day_context", _unreachable)
     r = log_page.post("/log/day", data={"date": "2026-09-01", "fluorescent": "lots"})

@@ -142,7 +142,9 @@ def test_garbage_time_or_offset_is_rejected():
 def test_day_context_only_returns_the_fields_submitted():
     assert journal.parse_day_context(Form(fluorescent="hours")) == {"fluorescent_exposure": "hours"}
     assert journal.parse_day_context(Form(peak="8")) == {"peak_intensity": 8}
-    assert journal.parse_day_context(Form(note=" office ")) == {"note": "office"}
+    # The day note's field is "daynote": the check-in form has its own "note".
+    assert journal.parse_day_context(Form(daynote=" office ")) == {"note": "office"}
+    assert journal.parse_day_context(Form(daynote="")) == {"note": None}
 
 
 def test_an_empty_peak_clears_the_override():
