@@ -34,6 +34,9 @@ class Secrets(BaseSettings):
 
     liftosaur_api_key: str = ""
 
+    # Garmin Connect Personal API key (self-generated, expires after 30d-1y).
+    garmin_api_key: str = ""
+
     # Headache reminders. On public ntfy.sh the topic name is the only access
     # control, so it lives here with the secrets; the token is for a
     # self-hosted / access-controlled server later and may stay empty.
@@ -75,6 +78,11 @@ class LiftosaurConfig(BaseModel):
     window_days: int = 7
 
 
+class GarminConfig(BaseModel):
+    enabled: bool = True
+    window_days: int = 7
+
+
 class HeadacheConfig(BaseModel):
     """Check-in reminders (``anduin remind headache``). The schedule itself is
     the systemd timer's; this is what one run needs."""
@@ -98,6 +106,7 @@ class FileConfig(BaseModel):
     withings: WithingsConfig = WithingsConfig()
     intervals: IntervalsConfig = IntervalsConfig()
     liftosaur: LiftosaurConfig = LiftosaurConfig()
+    garmin: GarminConfig = GarminConfig()
     headache: HeadacheConfig = HeadacheConfig()
 
 

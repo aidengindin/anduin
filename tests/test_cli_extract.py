@@ -83,3 +83,21 @@ def test_dry_run_skips_activity_daily_refresh(monkeypatch):
     rc = cli._run_extract(_args(dry_run=True), _app())
 
     assert rc == 0
+
+
+def test_garmin_dry_run_does_not_open_db(monkeypatch):
+    seen = {}
+
+    def fake_connect(url):  # noqa: ANN001
+        raise AssertionError("dry-run must not open a DB connection")
+
+    def fake_extract(http, conn, app, since, until, *, dry_run):  # noqa: ANN001
+        seen["conn"], seen["window"] = conn, (until - since).days
+        return base.SourceResult(source="garmin")
+
+    monkeypatch.setattr(cli.db_mod, "connect", fake_connect)
+    monkeypatch.setattr(cli.garmin, "extract", fake_extract)
+
+    args = argparse.Namespace(source="garmin", since=None, until=None, dry_run=True)
+    assert cli._run_extract(args, _app()) == 0
+    assert seen == {"conn": None, "window": 7}

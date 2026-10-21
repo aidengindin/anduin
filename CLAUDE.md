@@ -1,7 +1,7 @@
 # anduin
 
 Personal health data pipeline: source extractors (Google Health / Withings /
-intervals.icu / Liftosaur) → TimescaleDB, with a `raw` layer and a reconciled
+intervals.icu / Liftosaur / Garmin) → TimescaleDB, with a `raw` layer and a reconciled
 `canonical` view layer.
 
 ## Design rationale (the "why" behind the schema)
@@ -186,6 +186,28 @@ Rules that must hold:
   column is `qualities`, not `character` (a SQL type name).
 
 See docs/plans/2026-09-01-headache-log-design.md.
+
+### Garmin is a whole-day fallback, never a second stream
+
+Garmin (Personal API, `sources/garmin.py`) is used only for a day or night
+where the Air has **nothing**; otherwise it is ignored (migration 0027):
+
+- **Steps**: a civil day with no wearable step samples at all takes Garmin's
+  daily total. Garmin has no intraday steps, so NEAT that day is estimated as
+  `greatest(garmin_total − workout_steps, 0)`; the total comes out as Garmin's
+  number. Any Air steps on a day, however few, and Garmin is ignored for it.
+- **Sleep**: a Garmin night survives `canonical.sleep` only if no Air session
+  overlaps it. The API gives stage *totals* only, so those nights have no
+  hypnogram, composition or SRI contribution.
+- **RHR / HRV / SpO2**: `canonical.daily_metrics` prefers `google_health`
+  (it was latest-ingest-wins); `hrv_daily` / `spo2_daily` append Garmin rows
+  only for dates the Air-derived arm has none.
+
+The extractor **must never write `raw.samples`**. `canonical.samples` only
+arbitrates exact-timestamp ties, and NEAT/total/`activity_daily`/`workout_load`
+read `raw.samples` with no source filter, so Garmin samples would interleave
+with or double-count against the Air. Landing Garmin rows without 0027 was
+verified to silently replace Air RHR, sleep and nightly HRV/SpO2 attribution.
 
 ### Extending a view: append, never reorder
 

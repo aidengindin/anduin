@@ -67,3 +67,14 @@ def test_ntfy_topic_comes_from_the_environment(tmp_path, monkeypatch):
     monkeypatch.setenv("DATABASE_URL", "postgresql://x")
     monkeypatch.setenv("NTFY_TOPIC", "anduin-abc123")
     assert Secrets().ntfy_topic == "anduin-abc123"
+
+
+def test_garmin_config_defaults(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("ANDUIN_CONFIG", raising=False)
+    monkeypatch.delenv("GARMIN_API_KEY", raising=False)
+    monkeypatch.setenv("DATABASE_URL", "postgresql://x")
+    app = load()
+    assert app.file.garmin.enabled is True
+    assert app.file.garmin.window_days == 7
+    assert app.secrets.garmin_api_key == ""

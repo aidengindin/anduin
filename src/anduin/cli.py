@@ -22,12 +22,12 @@ from anduin import db as db_mod
 from anduin import remind
 from anduin import state as state_mod
 from anduin.http import make_client
-from anduin.sources import google_health, intervals, liftosaur, withings
+from anduin.sources import garmin, google_health, intervals, liftosaur, withings
 from anduin.sources.base import SourceResult
 
 logger = logging.getLogger("anduin")
 
-SOURCES = ("google-health", "withings", "intervals", "liftosaur")
+SOURCES = ("google-health", "withings", "intervals", "liftosaur", "garmin")
 
 
 def _parse_args(argv: list[str]) -> argparse.Namespace:
@@ -109,6 +109,13 @@ def _run_extract(args: argparse.Namespace, app: cfg_mod.AppConfig) -> int:
                 else _default_window(app.file.liftosaur.window_days)
             )
             result = liftosaur.extract(http, conn, app, since, until, dry_run=args.dry_run)
+        elif args.source == "garmin":
+            since, until = (
+                (args.since, args.until)
+                if args.since
+                else _default_window(app.file.garmin.window_days)
+            )
+            result = garmin.extract(http, conn, app, since, until, dry_run=args.dry_run)
         else:
             raise AssertionError(args.source)
 
