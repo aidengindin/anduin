@@ -21,7 +21,7 @@ Two NixOS modules and one host wire-up:
 2. **`services/anduin.nix`** — one module exposing
    `agindin.services.anduin.enable` plus per-source `<source>.enable`
    sub-options. Creates a system user `anduin`, declares one oneshot+timer per
-   enabled source (google-health, withings, intervals, liftosaur), declares one
+   enabled source (google-health, withings, intervals, liftosaur, garmin), declares one
    one-shot `anduin-db-migrate` service, all consuming the agenix-decrypted env
    file path and a JSON config file via `ANDUIN_CONFIG`.
 3. **Host wiring in `hosts/osgiliath/services.nix`** — enable both modules,
@@ -142,6 +142,10 @@ let
       enabled = cfg.liftosaur.enable;
       window_days = cfg.liftosaur.windowDays;
     };
+    garmin = {
+      enabled = cfg.garmin.enable;
+      window_days = cfg.garmin.windowDays;
+    };
     headache = {
       enabled = cfg.headache.enable;
       app_url = cfg.headache.appUrl;
@@ -237,6 +241,15 @@ in {
       ]; };
       windowDays = mkOption { type = types.ints.positive; default = 7; };
     };
+    # Whole-day fallback for the Air (migration 0027). Daily data only, so a
+    # few runs a day is plenty; Garmin restates the recent days as it syncs.
+    garmin = {
+      enable = mkEnableOption "Garmin Connect Personal API extractor";
+      schedule = mkOption { type = types.listOf types.str; default = [
+        "*-*-* 03,09,15,21:53:00"
+      ]; };
+      windowDays = mkOption { type = types.ints.positive; default = 7; };
+    };
     headache = {
       enable = mkEnableOption "headache check-in reminders over ntfy";
       # Local wall-clock times; the timer runs in the host's time.timeZone,
@@ -290,6 +303,8 @@ in {
       (mkExtractor "intervals" cfg.intervals.schedule);
     systemd.services.anduin-liftosaur = mkIf cfg.liftosaur.enable
       (mkExtractor "liftosaur" cfg.liftosaur.schedule);
+    systemd.services.anduin-garmin = mkIf cfg.garmin.enable
+      (mkExtractor "garmin" cfg.garmin.schedule);
 
     # Reminder: same env file + config as the extractors, no state dir. No
     # RandomizedDelaySec -- a check-in prompt should land at the time chosen.
@@ -355,6 +370,12 @@ INTERVALS_ATHLETE_ID=i95355
 
 LIFTOSAUR_API_KEY=...
 
+# Garmin Connect Personal API key: connect.garmin.com/app/settings/personalApiToken.
+# Shown once; expires after 30d-1y (Garmin emails a week before). When it
+# lapses the extractor logs "API key rejected or expired" and garmin goes stale
+# in derived.ingest_freshness -- generate a new one and re-encrypt this file.
+GARMIN_API_KEY=...
+
 # Headache reminders. On public ntfy.sh the topic name is the only access
 # control, so it is a secret: pick something unguessable (e.g. `openssl rand
 # -hex 12`) and subscribe the phone's ntfy app to it. NTFY_TOKEN is optional
@@ -396,6 +417,7 @@ anduin = {
   withings.enable      = true;
   intervals.enable     = true;
   liftosaur.enable     = true;
+  garmin.enable        = true;
 };
 ```
 
