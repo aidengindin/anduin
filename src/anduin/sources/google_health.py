@@ -180,6 +180,27 @@ def _interval_row(metric: str, value: float, unit: str,
     }
 
 
+# --- data-source filter ------------------------------------------------------
+
+def _from_air(dp: dict) -> bool:
+    """True unless the dataPoint was recorded by something other than Fitbit.
+
+    The v4 API returns every data point in the account, not just the Air's: with
+    Apple Health import on, it relays the iPhone pedometer and anything synced
+    into HealthKit (Garmin Connect, Wahoo, Liftosaur...) under
+    ``dataSource.platform = "HEALTH_KIT"``. Their intervals start at different
+    times from the Air's minute buckets, so the ``metric|start`` natural key
+    never collides and they stack on top of the Air's — that 2-3x'd daily steps.
+    Garmin already enters through its own whole-day fallback (sources/garmin.py),
+    which must never be competing with sample rows.
+
+    A point with no ``dataSource`` at all is kept: every live payload carries
+    one, and dropping all data on a schema change would fail silently.
+    """
+    platform = (dp.get("dataSource") or {}).get("platform")
+    return platform is None or platform == "FITBIT"
+
+
 # --- emitters (pure: v4 dataPoint dict -> row dict(s)) ----------------------
 
 def _emit_sleep(dp: dict) -> tuple[dict, list[dict]]:
@@ -429,9 +450,14 @@ def _list_datapoints(
     filter_expr: str,
     page_size: int,
 ) -> Iterator[dict]:
-    """Yield every dataPoint for a type across the range, following pageTokens."""
+    """Yield every Air dataPoint for a type across the range, following pageTokens.
+
+    Points from other platforms are dropped here (see ``_from_air``), so no
+    emitter ever sees one.
+    """
     url = f"{BASE}/users/me/dataTypes/{data_type}/dataPoints"
     page_token: str | None = None
+    dropped = 0
     while True:
         params = {"filter": filter_expr, "pageSize": page_size}
         if page_token:
@@ -440,10 +466,16 @@ def _list_datapoints(
         if not isinstance(payload, dict):
             return
         for dp in payload.get("dataPoints", []) or []:
-            yield dp
+            if _from_air(dp):
+                yield dp
+            else:
+                dropped += 1
         page_token = payload.get("nextPageToken")
         if not page_token:
-            return
+            break
+    if dropped:
+        logger.info("google_health %s: skipped %d non-Fitbit data point(s)",
+                    data_type, dropped)
 
 
 # --- orchestration ---------------------------------------------------------
