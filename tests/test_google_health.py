@@ -23,6 +23,7 @@ from anduin.sources.google_health import (
     _emit_spo2_sample,
     _emit_steps,
     _filter_expr,
+    _from_air,
 )
 
 UTC = timezone.utc
@@ -334,3 +335,51 @@ def test_sleep_temp_filter_is_a_civil_date_range():
                         date(2026, 3, 1), date(2026, 3, 3))
     assert expr == ('daily_sleep_temperature_derivations.date >= "2026-03-01" '
                     'AND daily_sleep_temperature_derivations.date < "2026-03-04"')
+
+
+# --- data-source filter (only the Air, never what Health Connect relays) ---
+
+_AIR_SOURCE = {"device": {"displayName": "Fitbit Air"}, "platform": "FITBIT",
+               "recordingMethod": "PASSIVELY_MEASURED"}
+
+
+def test_air_datapoint_is_kept():
+    assert _from_air({"dataSource": _AIR_SOURCE, "steps": {}})
+
+
+def test_healthkit_datapoints_are_dropped():
+    # Real payloads seen once Apple Health import was on: the iPhone's own
+    # pedometer and Garmin Connect relayed through HealthKit, each with steps
+    # that overlap the Air's minute buckets at different start times.
+    iphone = {"platform": "HEALTH_KIT", "recordingMethod": "PASSIVELY_MEASURED",
+              "application": {"packageName": "com.apple.health"},
+              "device": {"formFactor": "PHONE", "manufacturer": "Apple Inc."}}
+    garmin = {"platform": "HEALTH_KIT", "recordingMethod": "UNKNOWN",
+              "application": {"packageName": "com.garmin.connect.mobile"}}
+    assert not _from_air({"dataSource": iphone, "steps": {}})
+    assert not _from_air({"dataSource": garmin, "heartRate": {}})
+
+
+def test_any_non_fitbit_platform_is_dropped():
+    assert not _from_air({"dataSource": {"platform": "HEALTH_CONNECT"}})
+
+
+def test_datapoint_without_a_data_source_is_kept():
+    # Every live payload carries dataSource; tolerate its absence rather than
+    # silently dropping all data if Google ever omits it.
+    assert _from_air({"steps": {}})
+
+
+def test_list_datapoints_yields_only_air_points(monkeypatch):
+    import anduin.sources.google_health as gh
+
+    pages = [
+        {"dataPoints": [{"dataSource": _AIR_SOURCE, "n": 1},
+                        {"dataSource": {"platform": "HEALTH_KIT"}, "n": 2}],
+         "nextPageToken": "p2"},
+        {"dataPoints": [{"dataSource": {"platform": "HEALTH_KIT"}, "n": 3},
+                        {"dataSource": _AIR_SOURCE, "n": 4}]},
+    ]
+    monkeypatch.setattr(gh, "get_json", lambda *a, **k: pages.pop(0))
+    got = [dp["n"] for dp in gh._list_datapoints(None, "tok", "steps", "f", 10)]
+    assert got == [1, 4]

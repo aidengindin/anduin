@@ -262,5 +262,12 @@ And when verifying a migration by hand, apply it to a database holding the
   reads `startUtcOffset` for sleep `tz_offset_minutes`; `canonical.steps_daily`
   buckets by the civil date. UI shows local via `sleep_efficiency.started_local`/
   `ended_local`.
+- **The API returns every source in the account, not just the Air.** With Apple
+  Health import on, it relays the iPhone pedometer and anything synced into
+  HealthKit (Garmin Connect, Wahoo, Liftosaur) as `dataSource.platform =
+  "HEALTH_KIT"`. Their intervals never share a start with the Air's minute
+  buckets, so the `metric|start` natural key can't dedupe them and they stack —
+  steps ran 2-3x high from 2026-09-15. `_list_datapoints` keeps only
+  `platform = "FITBIT"` (`_from_air`); 0028 purged what had landed.
 - **RHR: the API value ≠ the app value.** Google's API returns e.g. 52 while the
   Fitbit app shows 53 (different aggregation). We store the API value faithfully.
