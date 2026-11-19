@@ -78,6 +78,11 @@ def _retry_request(
             continue
 
         r.raise_for_status()
+        # 204 No Content (or any empty 2xx body) means "nothing here" -- e.g.
+        # Garmin's HRV endpoint for a window with no readings -- not a malformed
+        # response. Callers treat None as an empty payload.
+        if r.status_code == 204 or not r.content:
+            return None
         return r.json()
     if last_exc is not None:
         raise last_exc
