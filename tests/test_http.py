@@ -15,8 +15,11 @@ class _StubResponse:
         self.request = httpx.Request("GET", url)
         self._json_data = json_data if json_data is not None else {}
         self.text = text
+        self.content = b"" if status_code == 204 else b"{}"
 
     def json(self):
+        if not self.content:
+            raise ValueError("Expecting value: line 1 column 1 (char 0)")
         return self._json_data
 
     def raise_for_status(self):
@@ -49,6 +52,29 @@ def test_sustained_429_raises_http_status_error_not_assertion():
     client = _AlwaysRateLimitedClient()
     with pytest.raises(httpx.HTTPStatusError):
         get_json(client, "https://example.test/api", retries=3, backoff=2.0)
+
+
+class _NoContentClient:
+    def get(self, *args, **kwargs):
+        return _StubResponse(204)
+
+
+def test_204_no_content_returns_none():
+    # Garmin's HRV endpoint answers 204 for a window with no readings; that must
+    # not surface as a JSONDecodeError and fail the whole extractor run.
+    assert get_json(_NoContentClient(), "https://example.test/api") is None
+
+
+def test_empty_200_body_returns_none():
+    response = httpx.Response(
+        200, content=b"", request=httpx.Request("GET", "https://example.test/api")
+    )
+
+    class _Client:
+        def get(self, *args, **kwargs):
+            return response
+
+    assert get_json(_Client(), "https://example.test/api") is None
 
 
 def test_retry_then_success_returns_json():
